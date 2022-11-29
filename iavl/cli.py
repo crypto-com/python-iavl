@@ -319,7 +319,7 @@ def fast_rollback(
 def visualize(db, version, store):
     """
     visualize iavl tree with dot, example:
-    $ iavl-cli virtualize --version 9 --db app.db bank | dot -Tpdf > /tmp/tree.pdf
+    $ iavl-cli visualize --version 9 --db app.db bank | dot -Tpdf > /tmp/tree.pdf
     """
     db = dbm.open(str(db), read_only=True)
     if version is None:
