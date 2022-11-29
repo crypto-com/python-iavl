@@ -315,18 +315,20 @@ def fast_rollback(
     help="the version to query, default to latest version if not provided",
     type=click.INT,
 )
-@click.argument("store")
-def visualize(db, version, store):
+@click.option("--store", "-s")
+def visualize(db, version, store=None):
     """
     visualize iavl tree with dot, example:
-    $ iavl-cli virtualize --version 9 --db app.db bank | dot -Tpdf > /tmp/tree.pdf
+    $ iavl-cli visualize --version 9 --db app.db bank | dot -Tpdf > /tmp/tree.pdf
     """
     db = dbm.open(str(db), read_only=True)
     if version is None:
         version = iavl_latest_version(db, store)
 
-    root_hash = db.get(store_prefix(store) + root_key(version))
-    g = visualize_iavl(db, store, root_hash, version)
+    prefix = store_prefix(store) if store is not None else b""
+    root_hash = db.get(prefix + root_key(version))
+    root_hash2 = db.get(prefix + root_key(version - 1))
+    g = visualize_iavl(db, prefix, root_hash, version, root_hash2=root_hash2)
     print(g.source)
 
 
