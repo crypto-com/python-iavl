@@ -56,14 +56,16 @@ def visualize_iavl(
         hash = stack.pop()
         node = get_node(hash)
 
-        if node.version == version:
+        # don't duplicate nodes in compare mode
+        if root_hash2 is None or node.version == version:
             vis_node(hash, node)
 
         if not node.is_leaf():
             stack.append(node.right_node_ref)
             stack.append(node.left_node_ref)
 
-            if node.version == version:
+            # don't duplicate edges in compare mode
+            if root_hash2 is None or node.version == version:
                 g.edges(
                     [
                         (HexBytes(hash).hex(), HexBytes(node.right_node_ref).hex()),
