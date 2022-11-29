@@ -315,8 +315,14 @@ def fast_rollback(
     help="the version to query, default to latest version if not provided",
     type=click.INT,
 )
+@click.option(
+    "--include-prev-version",
+    help="include the previous version to compare",
+    is_flag=True,
+    default=False,
+)
 @click.option("--store", "-s")
-def visualize(db, version, store=None):
+def visualize(db, version, store=None, include_prev_version=False):
     """
     visualize iavl tree with dot, example:
     $ iavl-cli visualize --version 9 --db app.db bank | dot -Tpdf > /tmp/tree.pdf
@@ -327,7 +333,9 @@ def visualize(db, version, store=None):
 
     prefix = store_prefix(store) if store is not None else b""
     root_hash = db.get(prefix + root_key(version))
-    root_hash2 = db.get(prefix + root_key(version - 1))
+    root_hash2 = None
+    if include_prev_version and version > 1:
+        root_hash2 = db.get(prefix + root_key(version - 1))
     g = visualize_iavl(db, prefix, root_hash, version, root_hash2=root_hash2)
     print(g.source)
 
