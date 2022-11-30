@@ -36,7 +36,7 @@ class NodeDB:
             bz = self.db.get(node_key(hash))
             if bz is None:
                 return
-            node = PersistedNode.decode(bz)
+            node = PersistedNode.decode(bz, hash)
             self.cache[hash] = node
             return node
 
@@ -45,6 +45,18 @@ class NodeDB:
             return ref
         elif ref is not None:
             return self.get(ref)
+
+    def batch_remove_node(self, hash: bytes):
+        "remove node"
+        if self.batch is None:
+            self.batch = rocksdb.WriteBatch()
+        self.batch.delete(node_key(hash))
+        self.cache.pop(hash, None)
+
+    def batch_remove_root_hash(self, version: int):
+        if self.batch is None:
+            self.batch = rocksdb.WriteBatch()
+        self.batch.delete(root_key(version))
 
     def batch_set_node(self, hash: bytes, node: PersistedNode):
         if self.batch is None:
@@ -65,10 +77,35 @@ class NodeDB:
     def get_root_hash(self, version: int) -> Optional[bytes]:
         return self.db.get(root_key(version))
 
+    def get_root_node(self, version: int) -> Optional[PersistedNode]:
+        h = self.get_root_hash(version)
+        if h is None:
+            return None
+        return self.get(h)
+
     def latest_version(self) -> Optional[int]:
         from .utils import iavl_latest_version
 
         return iavl_latest_version(self.db, None)
+
+    def next_version(self, v: int) -> Optional[int]:
+        """
+        return the first version larger than v
+        """
+        it = self.db.iterkeys()
+        target = root_key(v)
+        it.seek(target)
+        k = next(it, None)
+        if k is None:
+            return
+        if k == target:
+            k = next(it, None)
+            if k is None:
+                return
+        if not k.startswith(b"r"):
+            return
+
+        return int.from_bytes(k[1:], "big")
 
 
 @dataclass
@@ -117,7 +154,7 @@ class Node:
             right_node_ref=node.right_node_ref,
         )
 
-    def persisted(self) -> PersistedNode:
+    def persisted(self, hash: bytes) -> PersistedNode:
         return PersistedNode(
             height=self.height,
             size=self.size,
@@ -126,6 +163,7 @@ class Node:
             value=self.value,
             left_node_ref=self.left_node_ref,
             right_node_ref=self.right_node_ref,
+            hash=hash,
         )
 
     def is_leaf(self):
@@ -286,7 +324,7 @@ class Tree:
 
     def save_version(self):
         def save_node(hash: bytes, node: Node):
-            self.ndb.batch_set_node(hash, node.persisted())
+            self.ndb.batch_set_node(hash, node.persisted(hash))
 
         if isinstance(self.root_node_ref, Node):
             self.root_node_ref = self.root_node_ref.save(save_node)
@@ -295,6 +333,19 @@ class Tree:
         self.ndb.batch_set_root_hash(self.version, root_hash)
         self.ndb.batch_commit()
         return root_hash
+
+    def delete_version(self, v: int):
+        from .diff import diff_tree
+
+        root1 = self.ndb.get_root_node(v)
+        root2 = self.ndb.get_root_node(self.ndb.next_version(v))
+        for orphaned, _ in diff_tree(self.ndb, root1, root2):
+            for n in orphaned:
+                if n.version >= v:
+                    self.ndb.batch_remove_node(n.hash)
+
+        self.ndb.batch_remove_root_hash(v)
+        self.ndb.batch_commit()
 
 
 def remove_recursive(

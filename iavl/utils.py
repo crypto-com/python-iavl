@@ -47,6 +47,8 @@ class Node(NamedTuple):
     left_node_ref: Optional[bytes]
     right_node_ref: Optional[bytes]
 
+    hash: bytes
+
     def is_leaf(self):
         return self.height == 0
 
@@ -69,9 +71,6 @@ class Node(NamedTuple):
             d["right_node_ref"] = HexBytes(self.right_node_ref).hex()
         return d
 
-    def hash(self):
-        return hash_node(self)
-
     def encode(self):
         return encode_node(self)
 
@@ -79,8 +78,8 @@ class Node(NamedTuple):
         return self.left_node(ndb).height - self.right_node(ndb).height
 
     @staticmethod
-    def decode(bz: bytes):
-        nd, _ = decode_node(bz)
+    def decode(bz: bytes, hash: bytes):
+        nd, _ = decode_node(bz, hash)
         return nd
 
 
@@ -191,22 +190,7 @@ def encode_node(node: Node) -> bytes:
     return b"".join(chunks)
 
 
-def hash_node(node: Node) -> bytes:
-    chunks = [
-        cprotobuf.encode_primitive("sint64", node.height),
-        cprotobuf.encode_primitive("sint64", node.size),
-        cprotobuf.encode_primitive("sint64", node.version),
-    ]
-    if node.is_leaf():
-        chunks += encode_bytes(node.key) + encode_bytes(
-            hashlib.sha256(node.value).digest()
-        )
-    else:
-        chunks += encode_bytes(node.left_node_ref) + encode_bytes(node.right_node_ref)
-    return hashlib.sha256(b"".join(chunks)).digest()
-
-
-def decode_node(bz: bytes) -> (Node, int):
+def decode_node(bz: bytes, hash: bytes) -> (Node, int):
     offset = 0
     height, n = cprotobuf.decode_primitive(bz[offset:], "sint64")
     offset += n
@@ -238,6 +222,7 @@ def decode_node(bz: bytes) -> (Node, int):
             value=value,
             left_node_ref=left_hash,
             right_node_ref=right_hash,
+            hash=hash,
         ),
         offset,
     )
@@ -298,7 +283,7 @@ def iter_iavl_tree(
     prefix = store_prefix(store)
 
     def get_node(hash: bytes) -> Node:
-        n, _ = decode_node(db.get(prefix + node_key(hash)))
+        n, _ = decode_node(db.get(prefix + node_key(hash)), hash)
         return n
 
     def prune_check(key: bytes) -> (bool, bool):
