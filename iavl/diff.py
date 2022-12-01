@@ -112,7 +112,7 @@ def diff_tree(ndb: NodeDB, root1: int, root2: int):
 
     while True:
         # l1 l2 at the same height now
-        common, orphaned, new = diff_sorted(l1.nodes, l2.nodes)
+        _, orphaned, new = diff_sorted(l1.nodes, l2.nodes)
         yield orphaned, new
 
         if l1.height == 0:
