@@ -9,7 +9,7 @@ class Layer:
     Represent one layer of nodes at the same height
 
     pending_nodes: because one of the children's height could be height-2, need to keep
-    it in the pending list temporariliy.
+    it in the pending list temporarily.
     """
 
     def __init__(self, nodes, pending_nodes):
@@ -28,8 +28,7 @@ class Layer:
 
     def next_layer(self, ndb):
         """
-        skipset: set of node hashes that should be skipped when
-        traversing into lower layers.
+        travel to next layer
         """
         assert self.height > 0
         nodes = []
@@ -58,7 +57,8 @@ class Layer:
 
 def diff_sorted(nodes1, nodes2):
     """
-    return (common, orphaned, new)
+    Contract: input list is sorted by node.key
+    return: (common, orphaned, new)
     """
     i1 = i2 = 0
     common = []
@@ -93,6 +93,7 @@ def diff_sorted(nodes1, nodes2):
 
 def diff_tree(ndb: NodeDB, root1: int, root2: int):
     """
+    diff two versions of the iavl tree.
     yields (orphaned, new)
     """
     l1 = Layer.root(root1)
