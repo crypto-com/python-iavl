@@ -78,14 +78,17 @@ def diff_sorted(nodes1, nodes2):
             i1 += 1
             i2 += 1
         elif k1 == k2:
+            # overriden by same key
             orphaned.append(nodes1[i1])
             new.append(nodes2[i2])
             i1 += 1
             i2 += 1
         elif k1 < k2:
+            # proceed to next node in nodes1 until catch up with nodes2
             orphaned.append(nodes1[i1])
             i1 += 1
         else:
+            # proceed to next node in nodes2 until catch up with nodes1
             new.append(nodes2[i2])
             i2 += 1
     return common, orphaned, new
