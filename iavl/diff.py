@@ -126,9 +126,6 @@ def diff_tree(get_node: GetNode, root1: PersistedNode, root2: PersistedNode):
         # l1 l2 at the same height now
         _, orphaned, new = diff_sorted(l1.nodes, l2.nodes)
 
-        if not orphaned and not new:
-            break
-
         yield orphaned, new
 
         if l1.height == 0:
@@ -196,7 +193,14 @@ def state_changes(get_node: GetNode, root1: PersistedNode, root2: PersistedNode)
     """
     for orphaned, new in diff_tree(get_node, root1, root2):
         # the nodes are on the same height, and we only care about leaf nodes here
-        node = orphaned[0] if orphaned else new[0]
+        try:
+            node = orphaned[0]
+        except IndexError:
+            try:
+                node = new[0]
+            except IndexError:
+                continue
+
         if node.height == 0:
             return split_operations(orphaned, new)
     return []
