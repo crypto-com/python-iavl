@@ -23,17 +23,19 @@ class NodeDB:
     db: rocksdb.DB
     batch: rocksdb.WriteBatch
     cache: Dict[bytes, PersistedNode]
+    prefix: bytes
 
-    def __init__(self, db):
+    def __init__(self, db, prefix=b""):
         self.db = db
         self.batch = None
         self.cache = {}
+        self.prefix = prefix
 
     def get(self, hash: bytes) -> Optional[PersistedNode]:
         try:
             return self.cache[hash]
         except KeyError:
-            bz = self.db.get(node_key(hash))
+            bz = self.db.get(self.prefix + node_key(hash))
             if bz is None:
                 return
             node = PersistedNode.decode(bz, hash)
@@ -75,7 +77,7 @@ class NodeDB:
             self.batch = None
 
     def get_root_hash(self, version: int) -> Optional[bytes]:
-        return self.db.get(root_key(version))
+        return self.db.get(self.prefix + root_key(version))
 
     def get_root_node(self, version: int) -> Optional[PersistedNode]:
         h = self.get_root_hash(version)
@@ -93,7 +95,7 @@ class NodeDB:
         return the first version larger than v
         """
         it = self.db.iterkeys()
-        target = root_key(v)
+        target = self.prefix + root_key(v)
         it.seek(target)
         k = next(it, None)
         if k is None:
@@ -102,24 +104,24 @@ class NodeDB:
             k = next(it, None)
             if k is None:
                 return
-        if not k.startswith(b"r"):
+        if not k.startswith(self.prefix + b"r"):
             return
 
-        return int.from_bytes(k[1:], "big")
+        return int.from_bytes(k[len(self.prefix) + 1 :], "big")
 
     def prev_version(self, v: int) -> Optional[int]:
         """
         return the closest version that's smaller than the target
         """
         it = reversed(self.db.iterkeys())
-        target = root_key(v)
+        target = self.prefix + root_key(v)
         it.seek_for_prev(target)
         key = next(it, None)
         if key == target:
             key = next(it, None)
-        if key is None or not key.startswith(b"r"):
+        if key is None or not key.startswith(self.prefix + b"r"):
             return
-        return int.from_bytes(key[1:], "big")
+        return int.from_bytes(key[len(self.prefix) + 1 :], "big")
 
     def delete_version(self, v: int) -> int:
         """
@@ -356,16 +358,22 @@ class Tree:
         self.root_node_ref = new
         return value
 
-    def save_version(self):
+    def save_version(self, dry_run=False):
+        """
+        if dry_run=True, don't actually modify anything, just return the new root hash
+        """
+
         def save_node(hash: bytes, node: Node):
-            self.ndb.batch_set_node(hash, node.persisted(hash))
+            if not dry_run:
+                self.ndb.batch_set_node(hash, node.persisted(hash))
 
         if isinstance(self.root_node_ref, Node):
             self.root_node_ref = self.root_node_ref.save(save_node)
-        self.version += 1
         root_hash = self.root_node_ref or hashlib.sha256().digest()
-        self.ndb.batch_set_root_hash(self.version, root_hash)
-        self.ndb.batch_commit()
+        if not dry_run:
+            self.version += 1
+            self.ndb.batch_set_root_hash(self.version, root_hash)
+            self.ndb.batch_commit()
         return root_hash
 
 

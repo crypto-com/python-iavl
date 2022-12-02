@@ -2,7 +2,7 @@ from typing import NamedTuple
 
 import rocksdb
 from hexbytes import HexBytes
-from iavl.diff import Op
+from iavl.diff import Op, apply_change_set
 from iavl.iavl import NodeDB, Tree
 
 
@@ -52,19 +52,6 @@ ChangeSets = [
     [(b"aello%02d" % i, Op.Delete, b"world1") for i in range(21)]
     + [(b"hello%02d" % i, Op.Delete, b"world1") for i in range(19)],
 ]
-
-
-def apply_change_set(tree: Tree, changeset):
-    for key, op, arg in changeset:
-        if op == Op.Insert:
-            tree.set(key, arg)
-        elif op == Op.Update:
-            _, value = arg
-            tree.set(key, value)
-        elif op == Op.Delete:
-            tree.remove(key)
-        else:
-            raise NotImplementedError(f"unknown op {op}")
 
 
 def setup_test_tree(kvdb: rocksdb.DB):

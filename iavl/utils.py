@@ -239,6 +239,23 @@ def decode_fast_node(bz: bytes) -> (int, bytes, int):
     return version, value, offset
 
 
+def get_node(db: DBM, hash: bytes, store: Optional[str] = None) -> Optional[Node]:
+    prefix = store_prefix(store) if store is not None else b""
+    bz = db.get(prefix + node_key(hash))
+    if not bz:
+        return
+    node, _ = decode_node(bz, hash)
+    return node
+
+
+def get_root_node(db: DBM, version: int, store: Optional[str] = None) -> Optional[Node]:
+    prefix = store_prefix(store) if store is not None else b""
+    hash = db.get(prefix + root_key(version))
+    if not hash:
+        return
+    return get_node(db, hash, store)
+
+
 def iter_fast_nodes(db: DBM, store: str, start: Optional[bytes], end: Optional[bytes]):
     """
     normal kv db iteration

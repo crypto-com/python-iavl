@@ -4,7 +4,7 @@ tree diff algorithm between two versions
 from enum import IntEnum
 from typing import Callable, List, Optional, Tuple
 
-from .iavl import PersistedNode
+from .iavl import PersistedNode, Tree
 
 GetNode = Callable[bytes, Optional[PersistedNode]]
 
@@ -200,3 +200,19 @@ def state_changes(get_node: GetNode, root1: PersistedNode, root2: PersistedNode)
         if node.height == 0:
             return split_operations(orphaned, new)
     return []
+
+
+def apply_change_set(tree: Tree, changeset):
+    """
+    changeset: the result of `state_changes`
+    """
+    for key, op, arg in changeset:
+        if op == Op.Insert:
+            tree.set(key, arg)
+        elif op == Op.Update:
+            _, value = arg
+            tree.set(key, value)
+        elif op == Op.Delete:
+            tree.remove(key)
+        else:
+            raise NotImplementedError(f"unknown op {op}")
