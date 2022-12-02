@@ -107,6 +107,20 @@ class NodeDB:
 
         return int.from_bytes(k[1:], "big")
 
+    def prev_version(self, v: int) -> Optional[int]:
+        """
+        return the closest version that's smaller than the target
+        """
+        it = reversed(self.db.iterkeys())
+        target = root_key(v)
+        it.seek_for_prev(target)
+        key = next(it, None)
+        if key == target:
+            key = next(it, None)
+        if key is None or not key.startswith(b"r"):
+            return
+        return int.from_bytes(key[1:], "big")
+
     def delete_version(self, v: int) -> int:
         """
         return how many nodes deleted
@@ -114,11 +128,12 @@ class NodeDB:
         from .diff import diff_tree
 
         counter = 0
+        prev_version = self.prev_version(v) or 0
         root1 = self.get_root_node(v)
         root2 = self.get_root_node(self.next_version(v))
         for orphaned, _ in diff_tree(self, root1, root2):
             for n in orphaned:
-                if n.version >= v:
+                if n.version > prev_version:
                     self.batch_remove_node(n.hash)
                     counter += 1
 

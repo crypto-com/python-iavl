@@ -271,7 +271,7 @@ def within_range(key: bytes, start: Optional[bytes], end: Optional[bytes]):
 
 def iter_iavl_tree(
     db: DBM,
-    store: str,
+    store: Optional[str],
     node_hash: bytes,
     start: Optional[bytes],
     end: Optional[bytes],
@@ -280,7 +280,7 @@ def iter_iavl_tree(
         # empty root node
         return
 
-    prefix = store_prefix(store)
+    prefix = store_prefix(store) if store is not None else b""
 
     def get_node(hash: bytes) -> Node:
         n, _ = decode_node(db.get(prefix + node_key(hash)), hash)
