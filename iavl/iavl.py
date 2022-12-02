@@ -107,6 +107,25 @@ class NodeDB:
 
         return int.from_bytes(k[1:], "big")
 
+    def delete_version(self, v: int) -> int:
+        """
+        return how many nodes deleted
+        """
+        from .diff import diff_tree
+
+        counter = 0
+        root1 = self.get_root_node(v)
+        root2 = self.get_root_node(self.next_version(v))
+        for orphaned, _ in diff_tree(self, root1, root2):
+            for n in orphaned:
+                if n.version >= v:
+                    self.batch_remove_node(n.hash)
+                    counter += 1
+
+        self.batch_remove_root_hash(v)
+        self.batch_commit()
+        return counter
+
 
 @dataclass
 class Node:
@@ -333,19 +352,6 @@ class Tree:
         self.ndb.batch_set_root_hash(self.version, root_hash)
         self.ndb.batch_commit()
         return root_hash
-
-    def delete_version(self, v: int):
-        from .diff import diff_tree
-
-        root1 = self.ndb.get_root_node(v)
-        root2 = self.ndb.get_root_node(self.ndb.next_version(v))
-        for orphaned, _ in diff_tree(self.ndb, root1, root2):
-            for n in orphaned:
-                if n.version >= v:
-                    self.ndb.batch_remove_node(n.hash)
-
-        self.ndb.batch_remove_root_hash(v)
-        self.ndb.batch_commit()
 
 
 def remove_recursive(
