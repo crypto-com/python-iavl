@@ -134,7 +134,3 @@ def test_empty_tree(tmp_path):
     assert tree.remove("hello") is None
     tree.save_version()
     assert tree.version == 1
-
-
-def test_orphan_nodes(tmp_path):
-    pass
