@@ -1,5 +1,4 @@
 import binascii
-import functools
 import hashlib
 import json
 from typing import List, Optional
@@ -401,9 +400,7 @@ def test_state_round_trip(db, store, start_version):
             break
         v = int.from_bytes(k[len(prefix) + 1 :], "big")
         root = ndb.get(hash)
-        changeset = diff.state_changes(
-            functools.partial(get_node, db, store=store), prev_root, root
-        )
+        changeset = diff.state_changes(ndb.get, prev_root, root)
 
         # re-apply changeset
         tree = Tree(ndb, pversion)
