@@ -69,6 +69,8 @@ class Node(NamedTuple):
             d["left_node_ref"] = HexBytes(self.left_node_ref).hex()
         if self.right_node_ref is not None:
             d["right_node_ref"] = HexBytes(self.right_node_ref).hex()
+        if self.hash is not None:
+            d["hash"] = HexBytes(self.hash).hex()
         return d
 
     def encode(self):
