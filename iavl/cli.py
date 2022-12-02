@@ -5,8 +5,9 @@ from typing import List, Optional
 import click
 from hexbytes import HexBytes
 
-from . import dbm
+from . import dbm, diff
 from .utils import (
+    Node,
     decode_fast_node,
     decode_node,
     diff_iterators,
@@ -17,6 +18,7 @@ from .utils import (
     iter_iavl_tree,
     load_commit_infos,
     node_key,
+    prev_version,
     root_key,
     store_prefix,
 )
@@ -82,7 +84,7 @@ def root_node(db, store: List[str], version: Optional[int]):
             print(f"{s}:")
             continue
         bz = db.get(prefix + node_key(hash))
-        node, _ = decode_node(bz)
+        node, _ = decode_node(bz, hash)
         print(f"{s}: {binascii.hexlify(hash).decode()} {json.dumps(node.as_json())}")
 
 
@@ -98,7 +100,7 @@ def node(db, hash, store):
     """
     db = dbm.open(str(db), read_only=True)
     bz = db.get(store_prefix(store) + node_key(HexBytes(hash)))
-    node, _ = decode_node(bz)
+    node, _ = decode_node(bz, hash)
     print(json.dumps(node.as_json()))
 
 
@@ -348,6 +350,45 @@ def visualize(db, version, store=None, include_prev_version=False):
         root_hash2 = db.get(prefix + root_key(version - 1))
     g = visualize_iavl(db, prefix, root_hash, version, root_hash2=root_hash2)
     print(g.source)
+
+
+@cli.command()
+@click.option(
+    "--db", help="path to application.db", type=click.Path(exists=True), required=True
+)
+@click.option("--store", "-s")
+@click.option(
+    "--version",
+    help="the version to query, default to latest version if not provided",
+    type=click.INT,
+)
+def state_changes(db, version, store: Optional[str]):
+    db = dbm.open(str(db), read_only=True)
+    if version is None:
+        version = iavl_latest_version(db, store)
+
+    prefix = store_prefix(store) if store is not None else b""
+
+    def get_node(hash: bytes) -> Optional[Node]:
+        bz = db.get(prefix + node_key(HexBytes(hash)))
+        if not bz:
+            return None
+        node, _ = decode_node(bz, hash)
+        return node
+
+    pversion = prev_version(db, store, version)
+    phash = db.get(prefix + root_key(pversion)) if pversion is not None else None
+    hash = db.get(prefix + root_key(version))
+    for key, op, arg in diff.state_changes(
+        get_node, get_node(phash) if phash is not None else None, get_node(hash)
+    ):
+        if op == diff.Op.Update:
+            value = binascii.hexlify(arg[1]).decode()
+        elif op == diff.Op.Delete:
+            value = ""
+        elif op == diff.Op.Insert:
+            value = binascii.hexlify(arg).decode()
+        print(op, binascii.hexlify(key).decode(), value)
 
 
 if __name__ == "__main__":

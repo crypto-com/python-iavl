@@ -142,7 +142,7 @@ def store_prefix(s: str) -> bytes:
 
 def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
     it = reversed(db.iterkeys())
-    prefix = store_prefix(store)
+    prefix = store_prefix(store) if store is not None else b""
     target = prefix + root_key(v)
     it.seek(target)
     k = next(it, None)

@@ -2,9 +2,11 @@
 tree diff algorithm between two versions
 """
 from enum import IntEnum
-from typing import List, Tuple
+from typing import Callable, List, Optional, Tuple
 
-from .iavl import NodeDB, PersistedNode
+from .iavl import PersistedNode
+
+GetNode = Callable[bytes, Optional[PersistedNode]]
 
 
 class Layer:
@@ -29,7 +31,7 @@ class Layer:
     def root(cls, root):
         return cls([root] if root is not None else [], [])
 
-    def next_layer(self, ndb):
+    def next_layer(self, get_node: GetNode):
         """
         travel to next layer
         """
@@ -37,13 +39,13 @@ class Layer:
         nodes = []
         pending_nodes = []
         for node in self.nodes:
-            left = ndb.get(node.left_node_ref)
+            left = get_node(node.left_node_ref)
             if left.height == self.height - 1:
                 nodes.append(left)
             else:
                 pending_nodes.append(left)
 
-            right = ndb.get(node.right_node_ref)
+            right = get_node(node.right_node_ref)
             if right.height == self.height - 1:
                 nodes.append(right)
             else:
@@ -97,7 +99,7 @@ def diff_sorted(nodes1, nodes2):
     return common, orphaned, new
 
 
-def diff_tree(ndb: NodeDB, root1: PersistedNode, root2: PersistedNode):
+def diff_tree(get_node: GetNode, root1: PersistedNode, root2: PersistedNode):
     """
     diff two versions of the iavl tree.
     yields (orphaned, new)
@@ -114,11 +116,11 @@ def diff_tree(ndb: NodeDB, root1: PersistedNode, root2: PersistedNode):
 
     while l1.height > l2.height:
         yield l1.nodes, []
-        l1.next_layer(ndb)
+        l1.next_layer(get_node)
 
     while l2.height > l1.height:
         yield [], l2.nodes
-        l2.next_layer(ndb)
+        l2.next_layer(get_node)
 
     while True:
         # l1 l2 at the same height now
@@ -136,8 +138,8 @@ def diff_tree(ndb: NodeDB, root1: PersistedNode, root2: PersistedNode):
         l1.nodes = orphaned
         l2.nodes = new
 
-        l1.next_layer(ndb)
-        l2.next_layer(ndb)
+        l1.next_layer(get_node)
+        l2.next_layer(get_node)
 
 
 class Op(IntEnum):
@@ -183,12 +185,18 @@ def split_operations(nodes1, nodes2) -> List[Tuple[bytes, Op, object]]:
     return result
 
 
-def state_changes(ndb: NodeDB, root1: PersistedNode, root2: PersistedNode):
+def state_changes(get_node: GetNode, root1: PersistedNode, root2: PersistedNode):
     """
     extract state changes from the tree diff result
+
+    return: [(key, op, arg)]
+    arg: original value if op==Delete
+         new value if op==Insert
+         (original value, new value) if op==Update
     """
-    for orphaned, new in diff_tree(ndb, root1, root2):
+    for orphaned, new in diff_tree(get_node, root1, root2):
         # the nodes are on the same height, and we only care about leaf nodes here
         node = orphaned[0] if orphaned else new[0]
         if node.height == 0:
             return split_operations(orphaned, new)
+    return []

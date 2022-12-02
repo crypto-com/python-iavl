@@ -131,7 +131,7 @@ class NodeDB:
         prev_version = self.prev_version(v) or 0
         root1 = self.get_root_node(v)
         root2 = self.get_root_node(self.next_version(v))
-        for orphaned, _ in diff_tree(self, root1, root2):
+        for orphaned, _ in diff_tree(self.get, root1, root2):
             for n in orphaned:
                 if n.version > prev_version:
                     self.batch_remove_node(n.hash)

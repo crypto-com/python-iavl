@@ -9,7 +9,7 @@ def diff_tree_collect(ndb: NodeDB, v1: int, v2: int):
     orphaned = []
     new = []
 
-    for o, n in diff_tree(ndb, ndb.get_root_node(v1), ndb.get_root_node(v2)):
+    for o, n in diff_tree(ndb.get, ndb.get_root_node(v1), ndb.get_root_node(v2)):
         orphaned += o
         new += n
 
@@ -63,5 +63,5 @@ def test_state_changes(tmp_path):
     db = NodeDB(kvdb)
     for i, changes in enumerate(ChangeSets):
         assert changes == state_changes(
-            db, db.get_root_node(i), db.get_root_node(i + 1)
+            db.get, db.get_root_node(i), db.get_root_node(i + 1)
         )
