@@ -6,10 +6,20 @@ import click
 from hexbytes import HexBytes
 
 from . import dbm
-from .utils import (decode_fast_node, decode_node, diff_iterators,
-                    encode_stdint, fast_node_key, iavl_latest_version,
-                    iter_fast_nodes, iter_iavl_tree, load_commit_infos,
-                    node_key, root_key, store_prefix)
+from .utils import (
+    decode_fast_node,
+    decode_node,
+    diff_iterators,
+    encode_stdint,
+    fast_node_key,
+    iavl_latest_version,
+    iter_fast_nodes,
+    iter_iavl_tree,
+    load_commit_infos,
+    node_key,
+    root_key,
+    store_prefix,
+)
 from .visualize import visualize_iavl
 
 
@@ -325,7 +335,7 @@ def fast_rollback(
 def visualize(db, version, store=None, include_prev_version=False):
     """
     visualize iavl tree with dot, example:
-    $ iavl-cli visualize --version 9 --db app.db --store bank | dot -Tpdf > /tmp/tree.pdf
+    $ iavl-cli visualize --version 9 --db db --store bank | dot -Tpdf > /tmp/tree.pdf
     """
     db = dbm.open(str(db), read_only=True)
     if version is None:

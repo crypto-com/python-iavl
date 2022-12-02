@@ -1,7 +1,10 @@
 """
 tree diff algorithm between two versions
 """
-from .iavl import NodeDB
+from enum import IntEnum
+from typing import List, Tuple
+
+from .iavl import NodeDB, PersistedNode
 
 
 class Layer:
@@ -18,13 +21,13 @@ class Layer:
         - nodes are not empty
         - pending_nodes are at one layer below nodes
         """
-        self.height = nodes[0].height
+        self.height = nodes[0].height if nodes else None
         self.nodes = nodes
         self.pending_nodes = pending_nodes
 
     @classmethod
     def root(cls, root):
-        return cls([root], [])
+        return cls([root] if root is not None else [], [])
 
     def next_layer(self, ndb):
         """
@@ -94,13 +97,20 @@ def diff_sorted(nodes1, nodes2):
     return common, orphaned, new
 
 
-def diff_tree(ndb: NodeDB, root1: int, root2: int):
+def diff_tree(ndb: NodeDB, root1: PersistedNode, root2: PersistedNode):
     """
     diff two versions of the iavl tree.
     yields (orphaned, new)
     """
     l1 = Layer.root(root1)
     l2 = Layer.root(root2)
+
+    if l1.height is None:
+        l1.height = l2.height
+
+    if l1.height is None:
+        # both trees are empty
+        return [], []
 
     while l1.height > l2.height:
         yield l1.nodes, []
@@ -113,6 +123,10 @@ def diff_tree(ndb: NodeDB, root1: int, root2: int):
     while True:
         # l1 l2 at the same height now
         _, orphaned, new = diff_sorted(l1.nodes, l2.nodes)
+
+        if not orphaned and not new:
+            break
+
         yield orphaned, new
 
         if l1.height == 0:
@@ -124,3 +138,57 @@ def diff_tree(ndb: NodeDB, root1: int, root2: int):
 
         l1.next_layer(ndb)
         l2.next_layer(ndb)
+
+
+class Op(IntEnum):
+    Update, Delete, Insert = range(3)
+
+
+def split_operations(nodes1, nodes2) -> List[Tuple[bytes, Op, object]]:
+    """
+    Contract: input nodes are all leaf nodes, sorted by node.key
+
+    return: [(key, op, arg)]
+    arg: original value if op==Delete
+         new value if op==Insert
+         (original value, new value) if op==Update
+    """
+    i1 = i2 = 0
+    result = []
+    while True:
+        if i1 > len(nodes1) - 1:
+            for n in nodes2[i2:]:
+                result.append((n.key, Op.Insert, n.value))
+            break
+        if i2 > len(nodes2) - 1:
+            for n in nodes1[i1:]:
+                result.append((n.key, Op.Delete, n.value))
+            break
+        n1 = nodes1[i1]
+        n2 = nodes2[i2]
+        k1 = n1.key
+        k2 = n2.key
+        if k1 == k2:
+            result.append((k1, Op.Update, (n1.value, n2.value)))
+            i1 += 1
+            i2 += 1
+        elif k1 < k2:
+            # proceed to next node in nodes1 until catch up with nodes2
+            result.append((n1.key, Op.Delete, n1.value))
+            i1 += 1
+        else:
+            # proceed to next node in nodes2 until catch up with nodes1
+            result.append((n2.key, Op.Insert, n2.value))
+            i2 += 1
+    return result
+
+
+def state_changes(ndb: NodeDB, root1: PersistedNode, root2: PersistedNode):
+    """
+    extract state changes from the tree diff result
+    """
+    for orphaned, new in diff_tree(ndb, root1, root2):
+        # the nodes are on the same height, and we only care about leaf nodes here
+        node = orphaned[0] if orphaned else new[0]
+        if node.height == 0:
+            return split_operations(orphaned, new)

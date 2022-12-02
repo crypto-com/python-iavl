@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import rocksdb
 from hexbytes import HexBytes
+from iavl.diff import Op
 from iavl.iavl import NodeDB, Tree
 
 
@@ -31,7 +32,7 @@ EXPECT_OUTPUT = [
         HexBytes("585581060957AE2E6157F1790A88BF3544FECC9902BBF2E2286CF7325539126C"), 11
     ),
     ExpResult(
-        HexBytes("AB4C3DEFB7266D7587BAEA808B0BA2D74C294A96D55BDA7AB5E473CD75BC8E64"), 4
+        HexBytes("5C5859808C79637A143FEA9548A19194782D501A15D3EB412240D6A0D040D637"), 4
     ),
     ExpResult(
         HexBytes("D91CF6388EEFF3204474BB07B853AB0D7D39163912AC1E610E92F9B178C76922"), 81
@@ -39,23 +40,48 @@ EXPECT_OUTPUT = [
 ]
 
 
+ChangeSets = [
+    [(b"hello", Op.Insert, b"world")],
+    [(b"hello", Op.Update, (b"world", b"world1")), (b"hello1", Op.Insert, b"world1")],
+    [(b"hello2", Op.Insert, b"world1"), (b"hello3", Op.Insert, b"world1")],
+    [(b"hello%02d" % i, Op.Insert, b"world1") for i in range(20)],
+    [(b"hello", Op.Delete, b"world1"), (b"hello19", Op.Delete, b"world1")],
+    # try to cover all balancing cases
+    [(b"aello%02d" % i, Op.Insert, b"world1") for i in range(21)],
+    # remove most of the values
+    [(b"aello%02d" % i, Op.Delete, b"world1") for i in range(21)]
+    + [(b"hello%02d" % i, Op.Delete, b"world1") for i in range(19)],
+]
+
+
+def apply_change_set(tree: Tree, changeset):
+    for key, op, arg in changeset:
+        if op == Op.Insert:
+            tree.set(key, arg)
+        elif op == Op.Update:
+            _, value = arg
+            tree.set(key, value)
+        elif op == Op.Delete:
+            tree.remove(key)
+        else:
+            raise NotImplementedError(f"unknown op {op}")
+
+
 def setup_test_tree(kvdb: rocksdb.DB):
     db = NodeDB(kvdb)
     tree = Tree(db, 0)
-    assert not tree.set(b"hello", b"world")
+    apply_change_set(tree, ChangeSets[0])
     tree.save_version()
 
     tree = Tree(db, 1)
     assert b"world" == tree.get(b"hello")
-    assert tree.set(b"hello", b"world1")
-    assert not tree.set(b"hello1", b"world1")
+    apply_change_set(tree, ChangeSets[1])
     tree.save_version()
 
     tree = Tree(db, 2)
     assert b"world1" == tree.get(b"hello")
     assert b"world1" == tree.get(b"hello1")
-    tree.set(b"hello2", b"world1")
-    tree.set(b"hello3", b"world1")
+    apply_change_set(tree, ChangeSets[2])
     tree.save_version()
 
     tree = Tree(db, 3)
@@ -64,23 +90,17 @@ def setup_test_tree(kvdb: rocksdb.DB):
     node = db.get(db.get_root_hash(3))
     assert 2 == node.height
 
-    for i in range(20):
-        tree.set(b"hello%02d" % i, b"world1")
+    apply_change_set(tree, ChangeSets[3])
     tree.save_version()
 
     # remove nothing
     assert tree.remove(b"not exists") is None
 
-    tree.remove(b"hello")
-    tree.remove(b"hello19")
+    apply_change_set(tree, ChangeSets[4])
     tree.save_version()
     assert not tree.get(b"hello")
 
-    # try to cover all balancing cases
-    for i in range(11):
-        tree.set(b"aello%02d" % i, b"world1")
-    for i in range(20, 10, -1):
-        tree.set(b"aello%02d" % i, b"world1")
+    apply_change_set(tree, ChangeSets[5])
     tree.save_version()
 
     # test cache miss
@@ -90,12 +110,7 @@ def setup_test_tree(kvdb: rocksdb.DB):
     assert b"world1" == tree2.get(b"aello20")
 
     # remove most of the values
-    for i in range(11):
-        tree.remove(b"aello%02d" % i)
-    for i in range(20, 10, -1):
-        tree.remove(b"aello%02d" % i)
-    for i in range(20):
-        tree.remove(b"hello%02d" % i)
+    apply_change_set(tree, ChangeSets[6])
     tree.save_version()
 
 

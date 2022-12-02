@@ -84,10 +84,7 @@ func main() {
 	fmt.Printf("%d %X %d\n", v, hash, CountOrphans(d, tree.Version()))
 
 	// try to cover left balancing case
-	for i := 0; i <= 10; i++ {
-		tree.Set([]byte(fmt.Sprintf("aello%02d", i)), []byte("world1"))
-	}
-	for i := 20; i > 10; i-- {
+	for i := 0; i <= 20; i++ {
 		tree.Set([]byte(fmt.Sprintf("aello%02d", i)), []byte("world1"))
 	}
 	hash, v, err = tree.SaveVersion()
@@ -97,13 +94,10 @@ func main() {
 	fmt.Printf("%d %X %d\n", v, hash, CountOrphans(d, tree.Version()))
 
 	// remove most of the values
-	for i := 0; i <= 10; i++ {
+	for i := 0; i <= 20; i++ {
 		tree.Remove([]byte(fmt.Sprintf("aello%02d", i)))
 	}
-	for i := 20; i > 10; i-- {
-		tree.Remove([]byte(fmt.Sprintf("aello%02d", i)))
-	}
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 19; i++ {
 		tree.Remove([]byte(fmt.Sprintf("hello%02d", i)))
 	}
 	hash, v, err = tree.SaveVersion()

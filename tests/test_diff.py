@@ -1,7 +1,7 @@
 from typing import NamedTuple
 
 import rocksdb
-from iavl.diff import diff_sorted, diff_tree
+from iavl.diff import diff_sorted, diff_tree, state_changes
 from iavl.iavl import NodeDB, Tree
 
 
@@ -49,3 +49,19 @@ def test_diff_tree(tmp_path):
     orphaned, new = diff_tree_collect(db, 1, 2)
     assert len(orphaned) == 1
     assert len(new) == 3
+
+
+def test_state_changes(tmp_path):
+    from .test_iavl import ChangeSets, setup_test_tree
+
+    dbpath = tmp_path / "prune"
+    dbpath.mkdir()
+    print("db", dbpath)
+    kvdb = rocksdb.DB(str(dbpath), rocksdb.Options(create_if_missing=True))
+    setup_test_tree(kvdb)
+
+    db = NodeDB(kvdb)
+    for i, changes in enumerate(ChangeSets):
+        assert changes == state_changes(
+            db, db.get_root_node(i), db.get_root_node(i + 1)
+        )
