@@ -74,7 +74,7 @@ def root_node(db, store: List[str], version: Optional[int]):
         if not node:
             print(f"{s}:")
             continue
-        print(f"{s}: {binascii.hexlify(hash).decode()} {json.dumps(node.as_json())}")
+        print(f"{s}: {json.dumps(node.as_json())}")
 
 
 @cli.command()
