@@ -1,6 +1,7 @@
 """
 tree diff algorithm between two versions
 """
+import itertools
 from enum import IntEnum
 from typing import Callable, List, Optional, Tuple
 
@@ -193,6 +194,7 @@ def state_changes(get_node: GetNode, root1: PersistedNode, root2: PersistedNode)
     """
     for orphaned, new in diff_tree(get_node, root1, root2):
         # the nodes are on the same height, and we only care about leaf nodes here
+        try:
             node = next(itertools.chain(orphaned, new))
         except StopIteration:
             continue
