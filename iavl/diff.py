@@ -193,13 +193,9 @@ def state_changes(get_node: GetNode, root1: PersistedNode, root2: PersistedNode)
     """
     for orphaned, new in diff_tree(get_node, root1, root2):
         # the nodes are on the same height, and we only care about leaf nodes here
-        try:
-            node = orphaned[0]
-        except IndexError:
-            try:
-                node = new[0]
-            except IndexError:
-                continue
+            node = next(itertools.chain(orphaned, new))
+        except StopIteration:
+            continue
 
         if node.height == 0:
             return split_operations(orphaned, new)
