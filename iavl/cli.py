@@ -378,8 +378,7 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
 
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    pversion = ndb.prev_version(start_version) or 0
-    prev_root = ndb.get_root_node(pversion)
+    prev_root = ndb.get_root_node(ndb.prev_version(start_version) or 0)
     it = db.iteritems()
     it.seek(prefix + root_key(start_version))
     for k, hash in it:
@@ -393,7 +392,6 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
 
-        pversion = v
         prev_root = root
 
 
