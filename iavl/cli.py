@@ -358,6 +358,7 @@ def visualize(db, version, store=None, include_prev_version=False):
 @click.option(
     "--end-version",
     help="the end version, default to latest version",
+    type=click.INT,
 )
 @click.option(
     "--out-dir",
