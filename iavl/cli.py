@@ -366,6 +366,10 @@ def visualize(db, version, store=None, include_prev_version=False):
     required=True,
 )
 def dump_changesets(db, start_version, end_version, store: Optional[str], out_dir: str):
+    """
+    extract changeset by comparing iavl versions and save in files
+    with compatible format with file streamer.
+    """
     db = dbm.open(str(db), read_only=True)
     if end_version is None:
         end_version = iavl_latest_version(db, store)
