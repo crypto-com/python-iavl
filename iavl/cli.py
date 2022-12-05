@@ -369,10 +369,11 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
     """
     extract changeset by comparing iavl versions and save in files
     with compatible format with file streamer.
+    end_version is exclusive.
     """
     db = dbm.open(str(db), read_only=True)
     if end_version is None:
-        end_version = iavl_latest_version(db, store)
+        end_version = iavl_latest_version(db, store) + 1
 
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
@@ -384,6 +385,8 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
         if not k.startswith(prefix + b"r"):
             break
         v = int.from_bytes(k[len(prefix) + 1 :], "big")
+        if v >= end_version:
+            break
         root = ndb.get(hash)
         changeset = diff.state_changes(ndb.get, prev_root, root)
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
