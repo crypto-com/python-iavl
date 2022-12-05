@@ -389,6 +389,9 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
 
+        pversion = v
+        prev_root = root
+
 
 @cli.command()
 @click.argument("file", type=click.Path(exists=True))
