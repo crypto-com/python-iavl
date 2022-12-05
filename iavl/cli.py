@@ -373,26 +373,13 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
     end_version is exclusive.
     """
     db = dbm.open(str(db), read_only=True)
-    if end_version is None:
-        end_version = iavl_latest_version(db, store) + 1
-
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    prev_root = ndb.get_root_node(ndb.prev_version(start_version) or 0)
-    it = db.iteritems()
-    it.seek(prefix + root_key(start_version))
-    for k, hash in it:
-        if not k.startswith(prefix + b"r"):
-            break
-        v = int.from_bytes(k[len(prefix) + 1 :], "big")
-        if v >= end_version:
-            break
-        root = ndb.get(hash)
-        changeset = diff.state_changes(ndb.get, prev_root, root)
+    for _, v, _, changeset in iter_state_changes(
+        db, ndb, start_version=start_version, end_version=end_version, prefix=prefix
+    ):
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
-
-        prev_root = root
 
 
 @cli.command()
@@ -423,6 +410,27 @@ def test_state_round_trip(db, store, start_version):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
+    for pversion, v, root, changeset in iter_state_changes(
+        db, ndb, start_version=start_version, prefix=prefix
+    ):
+        # re-apply changeset
+        tree = Tree(ndb, pversion)
+        apply_change_set(tree, changeset)
+        tmp = tree.save_version(dry_run=True)
+        if (root.hash or hashlib.sha256().digest()) == tmp:
+            print(v, "ok")
+        else:
+            print(
+                v,
+                "fail",
+                binascii.hexlify(root.hash).decode(),
+                binascii.hexlify(tmp).decode(),
+            )
+
+
+def iter_state_changes(
+    db: dbm.DBM, ndb: NodeDB, start_version=0, end_version=None, prefix=b""
+):
     pversion = ndb.prev_version(start_version) or 0
     prev_root = ndb.get_root_node(pversion)
     it = db.iteritems()
@@ -431,22 +439,11 @@ def test_state_round_trip(db, store, start_version):
         if not k.startswith(prefix + b"r"):
             break
         v = int.from_bytes(k[len(prefix) + 1 :], "big")
-        root = ndb.get(hash)
-        changeset = diff.state_changes(ndb.get, prev_root, root)
+        if end_version is not None and v >= end_version:
+            break
 
-        # re-apply changeset
-        tree = Tree(ndb, pversion)
-        apply_change_set(tree, changeset)
-        tmp = tree.save_version(dry_run=True)
-        if (hash or hashlib.sha256().digest()) == tmp:
-            print(v, "ok")
-        else:
-            print(
-                v,
-                "fail",
-                binascii.hexlify(hash).decode(),
-                binascii.hexlify(tmp).decode(),
-            )
+        root = ndb.get(hash)
+        yield pversion, v, root, diff.state_changes(ndb.get, prev_root, root)
 
         pversion = v
         prev_root = root
