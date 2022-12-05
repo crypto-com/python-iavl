@@ -3,6 +3,7 @@
 The cli tool can be run as nix flake on the fly, there are two exposed app, the `iavl-cli`(the default one) is for rocksdb db backend, the `iavl-cli-leveldb` is for goleveldb backend.
 
 ```
+$ nix run github:crypto-com/python-iavl/$GIT_REF#iavl-cli -- --help
 Usage: iavl [OPTIONS] COMMAND [ARGS]...
 
 Options:
