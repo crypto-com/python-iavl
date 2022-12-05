@@ -1,6 +1,7 @@
 import binascii
 import hashlib
 import json
+from pathlib import Path
 from typing import List, Optional
 
 import click
@@ -349,28 +350,50 @@ def visualize(db, version, store=None, include_prev_version=False):
 )
 @click.option("--store", "-s")
 @click.option(
-    "--version",
-    help="the version to query, default to latest version if not provided",
+    "--start-version",
+    help="the version to start, default to 1",
+    default=1,
     type=click.INT,
 )
-def state_changes(db, version, store: Optional[str]):
+@click.option(
+    "--end-version",
+    help="the end version, default to latest version",
+)
+@click.option(
+    "--out-dir",
+    help="the output directory to save the data files",
+    type=click.Path(exists=True),
+    required=True,
+)
+def dump_changesets(db, start_version, end_version, store: Optional[str], out_dir: str):
     db = dbm.open(str(db), read_only=True)
-    if version is None:
-        version = iavl_latest_version(db, store)
+    if end_version is None:
+        end_version = iavl_latest_version(db, store)
 
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    pversion = ndb.prev_version(version) or 0
+    pversion = ndb.prev_version(start_version) or 0
     prev_root = ndb.get_root_node(pversion)
-    root = ndb.get_root_node(version)
-    for key, op, arg in diff.state_changes(ndb.get, prev_root, root):
-        if op == diff.Op.Update:
-            value = binascii.hexlify(arg[1]).decode()
-        elif op == diff.Op.Delete:
-            value = ""
-        elif op == diff.Op.Insert:
-            value = binascii.hexlify(arg).decode()
-        print(op, binascii.hexlify(key).decode(), value)
+    it = db.iteritems()
+    it.seek(prefix + root_key(start_version))
+    for k, hash in it:
+        if not k.startswith(prefix + b"r"):
+            break
+        v = int.from_bytes(k[len(prefix) + 1 :], "big")
+        root = ndb.get(hash)
+        changeset = diff.state_changes(ndb.get, prev_root, root)
+        with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
+            diff.write_change_set(fp, changeset)
+
+
+@cli.command()
+@click.argument("file", type=click.Path(exists=True))
+def print_changeset(file):
+    """
+    decode and print the content of changeset files
+    """
+    for item in diff.parse_change_set(Path(file).read_bytes()):
+        print(json.dumps(item.as_json()))
 
 
 @cli.command()
