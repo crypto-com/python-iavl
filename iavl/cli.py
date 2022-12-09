@@ -10,10 +10,20 @@ from hexbytes import HexBytes
 from . import dbm, diff
 from .diff import apply_change_set
 from .iavl import NodeDB, Tree
-from .utils import (decode_fast_node, diff_iterators, encode_stdint,
-                    fast_node_key, get_node, get_root_node,
-                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
-                    load_commit_infos, root_key, store_prefix)
+from .utils import (
+    decode_fast_node,
+    diff_iterators,
+    encode_stdint,
+    fast_node_key,
+    get_node,
+    get_root_node,
+    iavl_latest_version,
+    iter_fast_nodes,
+    iter_iavl_tree,
+    load_commit_infos,
+    root_key,
+    store_prefix,
+)
 from .visualize import visualize_iavl
 
 
