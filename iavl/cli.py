@@ -8,22 +8,11 @@ import click
 from hexbytes import HexBytes
 
 from . import dbm, diff
-from .diff import apply_change_set
 from .iavl import NodeDB, Tree
-from .utils import (
-    decode_fast_node,
-    diff_iterators,
-    encode_stdint,
-    fast_node_key,
-    get_node,
-    get_root_node,
-    iavl_latest_version,
-    iter_fast_nodes,
-    iter_iavl_tree,
-    load_commit_infos,
-    root_key,
-    store_prefix,
-)
+from .utils import (decode_fast_node, diff_iterators, encode_stdint,
+                    fast_node_key, get_node, get_root_node,
+                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
+                    load_commit_infos, root_key, store_prefix)
 from .visualize import visualize_iavl
 
 
@@ -425,7 +414,7 @@ def test_state_round_trip(db, store, start_version):
     ):
         # re-apply changeset
         tree = Tree(ndb, pversion)
-        apply_change_set(tree, changeset)
+        diff.apply_change_set(tree, changeset)
         tmp = tree.save_version(dry_run=True)
         if (root.hash or hashlib.sha256().digest()) == tmp:
             print(v, len(changeset), "ok")
@@ -458,6 +447,55 @@ def iter_state_changes(
 
         pversion = v
         prev_root = root
+
+
+@cli.command()
+@click.option(
+    "--db", help="path to application.db", type=click.Path(exists=True), required=True
+)
+@click.option("--store", "-s")
+@click.option(
+    "--version",
+    help="the version to start check",
+    default=1,
+)
+def trace_pruning(db, store, version):
+    """
+    analyzsis performance of pruning algorithm on production data.
+    """
+    db = dbm.open(str(db), read_only=True)
+    prefix = store_prefix(store) if store is not None else b""
+    ndb = NodeDB(db, prefix=prefix)
+    predecessor = ndb.prev_version(version) or 0
+    successor = ndb.next_version(version)
+    root1 = ndb.get_root_node(version)
+    root2 = ndb.get_root_node(successor)
+
+    get_nodes = set()
+
+    def trace_get(hash):
+        get_nodes.add(hash)
+        return ndb.get(hash)
+
+    total_deletes = sum(
+        len(orphaned)
+        for orphaned, _ in diff.diff_tree(
+            trace_get,
+            root1,
+            root2,
+            diff.DiffOptions.for_pruning(predecessor),
+        )
+    )
+
+    print(
+        "delete version:",
+        version,
+        "predecessor:",
+        predecessor,
+        "successor:",
+        successor,
+    )
+    print("delete:", total_deletes, "load:", len(get_nodes))
 
 
 if __name__ == "__main__":
