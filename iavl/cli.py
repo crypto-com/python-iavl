@@ -477,15 +477,16 @@ def trace_pruning(db, store, version):
         get_nodes.add(hash)
         return ndb.get(hash)
 
-    total_deletes = sum(
-        len(orphaned)
-        for orphaned, _ in diff.diff_tree(
-            trace_get,
-            root1,
-            root2,
-            diff.DiffOptions.for_pruning(predecessor),
-        )
-    )
+    total_deletes = 0
+    for orphaned, _ in diff.diff_tree(
+        trace_get,
+        root1,
+        root2,
+        diff.DiffOptions.for_pruning(predecessor),
+    ):
+        for n in orphaned:
+            print("delete", n.version, n.height, binascii.hexlify(n.key).decode())
+        total_deletes += len(orphaned)
 
     print(
         "delete version:",
