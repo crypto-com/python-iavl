@@ -127,13 +127,15 @@ class NodeDB:
         """
         return how many nodes deleted
         """
-        from .diff import diff_tree
+        from .diff import DiffOptions, diff_tree
 
         counter = 0
         prev_version = self.prev_version(v) or 0
         root1 = self.get_root_node(v)
         root2 = self.get_root_node(self.next_version(v))
-        for orphaned, _ in diff_tree(self.get, root1, root2):
+        for orphaned, _ in diff_tree(
+            self.get, root1, root2, DiffOptions.prune(prev_version)
+        ):
             for n in orphaned:
                 if n.version > prev_version:
                     self.batch_remove_node(n.hash)

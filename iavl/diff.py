@@ -4,7 +4,7 @@ tree diff algorithm between two versions
 import binascii
 import itertools
 from enum import IntEnum
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, NamedTuple, Optional, Tuple
 
 from cprotobuf import Field, ProtoEntity, decode_primitive, encode_primitive
 
@@ -43,7 +43,7 @@ class Layer:
     def root(cls, root):
         return cls([root] if root is not None else [], [])
 
-    def next_layer(self, get_node: GetNode):
+    def next_layer(self, get_node: GetNode, predecessor):
         """
         travel to next layer
         """
@@ -52,16 +52,18 @@ class Layer:
         pending_nodes = []
         for node in self.nodes:
             left = get_node(node.left_node_ref)
-            if left.height == self.height - 1:
-                nodes.append(left)
-            else:
-                pending_nodes.append(left)
+            if left.version > predecessor:
+                if left.height == self.height - 1:
+                    nodes.append(left)
+                else:
+                    pending_nodes.append(left)
 
             right = get_node(node.right_node_ref)
-            if right.height == self.height - 1:
-                nodes.append(right)
-            else:
-                pending_nodes.append(right)
+            if right.version > predecessor:
+                if right.height == self.height - 1:
+                    nodes.append(right)
+                else:
+                    pending_nodes.append(right)
 
         self.height -= 1
 
@@ -111,11 +113,37 @@ def diff_sorted(nodes1, nodes2):
     return common, orphaned, new
 
 
-def diff_tree(get_node: GetNode, root1: PersistedNode, root2: PersistedNode):
+class DiffOptions(NamedTuple):
+    # predecessor will skip the subtrees at or before the predecessor from both trees.
+    predecessor: int
+    # in prune mode, the diff process stop as soon as orphaned nodes becomes empty.
+    prune_mode: bool
+
+    @classmethod
+    def full(cls):
+        return cls(predecessor=0, prune_mode=False)
+
+    @classmethod
+    def prune(cls, predecessor: int):
+        return cls(predecessor=predecessor, prune_mode=True)
+
+
+def diff_tree(
+    get_node: GetNode, root1: PersistedNode, root2: PersistedNode, opts: DiffOptions
+):
     """
     diff two versions of the iavl tree.
     yields (orphaned, new)
+
+    predecessor can help to skip more subtrees when finding orphaned nodes, we don't
+    need to traverse the subtrees that's created at or before predecessor in that case.
     """
+
+    if root1 is not None and root1.version <= opts.predecessor:
+        root1 = None
+    if root2 is not None and root2.version <= opts.predecessor:
+        root2 = None
+
     l1 = Layer.root(root1)
     l2 = Layer.root(root2)
 
@@ -128,15 +156,18 @@ def diff_tree(get_node: GetNode, root1: PersistedNode, root2: PersistedNode):
 
     while l1.height > l2.height:
         yield l1.nodes, []
-        l1.next_layer(get_node)
+        l1.next_layer(get_node, opts.predecessor)
 
     while l2.height > l1.height:
         yield [], l2.nodes
-        l2.next_layer(get_node)
+        l2.next_layer(get_node, opts.predecessor)
 
     while True:
         # l1 l2 at the same height now
         _, orphaned, new = diff_sorted(l1.nodes, l2.nodes)
+
+        if not orphaned and opts.prune_mode:
+            break
 
         yield orphaned, new
 
@@ -147,8 +178,8 @@ def diff_tree(get_node: GetNode, root1: PersistedNode, root2: PersistedNode):
         l1.nodes = orphaned
         l2.nodes = new
 
-        l1.next_layer(get_node)
-        l2.next_layer(get_node)
+        l1.next_layer(get_node, opts.predecessor)
+        l2.next_layer(get_node, opts.predecessor)
 
 
 def split_operations(nodes1, nodes2) -> ChangeSet:
@@ -199,7 +230,7 @@ def state_changes(get_node: GetNode, root1: PersistedNode, root2: PersistedNode)
          new value if op==Insert
          (original value, new value) if op==Update
     """
-    for orphaned, new in diff_tree(get_node, root1, root2):
+    for orphaned, new in diff_tree(get_node, root1, root2, DiffOptions.full()):
         # the nodes are on the same height, and we only care about leaf nodes here
         try:
             node = next(itertools.chain(orphaned, new))
