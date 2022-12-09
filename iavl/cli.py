@@ -418,10 +418,11 @@ def test_state_round_trip(db, store, start_version):
         apply_change_set(tree, changeset)
         tmp = tree.save_version(dry_run=True)
         if (root.hash or hashlib.sha256().digest()) == tmp:
-            print(v, "ok")
+            print(v, len(changeset), "ok")
         else:
             print(
                 v,
+                len(changeset),
                 "fail",
                 binascii.hexlify(root.hash).decode(),
                 binascii.hexlify(tmp).decode(),
