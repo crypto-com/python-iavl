@@ -3,6 +3,7 @@ tree diff algorithm between two versions
 """
 import binascii
 import itertools
+from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Callable, List, NamedTuple, Optional, Tuple
 
@@ -21,6 +22,7 @@ Change = Tuple[bytes, Op, object]
 ChangeSet = List[Change]
 
 
+@dataclass
 class Layer:
     """
     Represent one layer of nodes at the same height
@@ -29,19 +31,20 @@ class Layer:
     it in the pending list temporarily.
     """
 
-    def __init__(self, nodes, pending_nodes):
-        """
-        Contract:
-        - nodes are not empty
-        - pending_nodes are at one layer below nodes
-        """
-        self.height = nodes[0].height if nodes else None
-        self.nodes = nodes
-        self.pending_nodes = pending_nodes
+    height: int = 0
+    nodes: List[PersistedNode] = field(default_factory=list)
+    pending_nodes: List[PersistedNode] = field(default_factory=list)
 
     @classmethod
     def root(cls, root):
-        return cls([root] if root is not None else [], [])
+        return cls(
+            height=root.height,
+            nodes=[root],
+        )
+
+    @classmethod
+    def empty(cls, height):
+        return cls(height=height)
 
     def next_layer(self, get_node: GetNode, predecessor):
         """
@@ -72,6 +75,9 @@ class Layer:
         self.nodes += self.pending_nodes
         self.nodes.sort(key=lambda n: n.key)
         self.pending_nodes = pending_nodes
+
+    def is_empty(self):
+        return not self.nodes and not self.pending_nodes
 
 
 def diff_sorted(nodes1, nodes2):
@@ -125,7 +131,7 @@ class DiffOptions(NamedTuple):
         return cls(predecessor=0, prune_mode=False)
 
     @classmethod
-    def prune(cls, predecessor: int):
+    def for_pruning(cls, predecessor: int):
         "do an optimized diff for pruning versions"
         return cls(predecessor=predecessor, prune_mode=True)
 
@@ -141,20 +147,26 @@ def diff_tree(
     need to traverse the subtrees that's created at or before predecessor in that case.
     """
 
+    # skipping nodes created at or before predecessor
     if root1 is not None and root1.version <= opts.predecessor:
         root1 = None
     if root2 is not None and root2.version <= opts.predecessor:
         root2 = None
 
-    l1 = Layer.root(root1)
-    l2 = Layer.root(root2)
+    # nothing to do if both tree are empty
+    if root1 is None and root2 is None:
+        return
 
-    if l1.height is None:
-        l1.height = l2.height
-
-    if l1.height is None:
-        # both trees are empty
-        return [], []
+    # if one is empty, create an empty layer with the same height as the other tree.
+    if root1 is None:
+        l1 = Layer.empty(root2.height)
+        l2 = Layer.root(root2)
+    elif root2 is None:
+        l1 = Layer.root(root1)
+        l2 = Layer.empty(root1.height)
+    else:
+        l1 = Layer.root(root1)
+        l2 = Layer.root(root2)
 
     while l1.height > l2.height:
         yield l1.nodes, []
@@ -168,9 +180,6 @@ def diff_tree(
         # l1 l2 at the same height now
         _, orphaned, new = diff_sorted(l1.nodes, l2.nodes)
 
-        if not orphaned and opts.prune_mode:
-            break
-
         yield orphaned, new
 
         if l1.height == 0:
@@ -179,6 +188,11 @@ def diff_tree(
         # don't visit the common sub-trees
         l1.nodes = orphaned
         l2.nodes = new
+
+        if opts.prune_mode and l1.is_empty():
+            # nothing else to see in tree1, no more orphaned nodes, only new ones,
+            # that's enough for pruning mode.
+            break
 
         l1.next_layer(get_node, opts.predecessor)
         l2.next_layer(get_node, opts.predecessor)

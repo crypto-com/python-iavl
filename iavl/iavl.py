@@ -134,12 +134,11 @@ class NodeDB:
         root1 = self.get_root_node(v)
         root2 = self.get_root_node(self.next_version(v))
         for orphaned, _ in diff_tree(
-            self.get, root1, root2, DiffOptions.prune(prev_version)
+            self.get, root1, root2, DiffOptions.for_pruning(prev_version)
         ):
+            counter += len(orphaned)
             for n in orphaned:
-                if n.version > prev_version:
-                    self.batch_remove_node(n.hash)
-                    counter += 1
+                self.batch_remove_node(n.hash)
 
         self.batch_remove_root_hash(v)
         self.batch_commit()
