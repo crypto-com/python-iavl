@@ -121,10 +121,12 @@ class DiffOptions(NamedTuple):
 
     @classmethod
     def full(cls):
+        "do a full diff, can be used for extracting state changes"
         return cls(predecessor=0, prune_mode=False)
 
     @classmethod
     def prune(cls, predecessor: int):
+        "do an optimized diff for pruning versions"
         return cls(predecessor=predecessor, prune_mode=True)
 
 
