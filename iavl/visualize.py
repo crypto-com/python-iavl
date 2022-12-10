@@ -28,15 +28,26 @@ def visualize_iavl(
         n, _ = decode_node(db.get(prefix + node_key(hash)), hash)
         return n
 
-    def vis_node(hash: bytes, n: Node):
-        style = "solid" if n.version == version else "filled"
-        g.node(HexBytes(hash).hex(), label=label(node), style=style)
+    def vis_node(hash: bytes, n: Node, new=False):
+        # assign style when new=True
+        fillcolor = None
+        style: str
+        if new:
+            style = "filled"
+            fillcolor = "#bed8a0"
+        elif n.version == version:
+            style = "solid"
+        else:
+            style = "filled"
+        g.node(HexBytes(hash).hex(), label=label(node), style=style, fillcolor=fillcolor)
 
+    last_keys: set[bytes] = set()
     if root_hash2 is not None:
         stack: List[bytes] = [root_hash2]
         while stack:
             hash = stack.pop()
             node = get_node(hash)
+            last_keys.add(node.key)
 
             vis_node(hash, node)
 
@@ -58,7 +69,7 @@ def visualize_iavl(
 
         # don't duplicate nodes in compare mode
         if root_hash2 is None or node.version == version:
-            vis_node(hash, node)
+            vis_node(hash, node, node.key not in last_keys)
 
         if not node.is_leaf():
             stack.append(node.right_node_ref)
