@@ -142,7 +142,6 @@ class NodeDB:
             self.get,
             v,
             predecessor,
-            successor,
             self.get_root_hash(v),
             self.get_root_hash(successor),
         ):
@@ -506,7 +505,6 @@ def delete_version(
     get_node: GetNode,
     v: int,
     predecessor: int,
-    successor: int,
     root: bytes,
     successor_root: bytes,
 ) -> int:
