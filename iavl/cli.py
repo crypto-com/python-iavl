@@ -443,9 +443,7 @@ def iter_state_changes(
         if end_version is not None and v >= end_version:
             break
 
-        yield pversion, v, hash, diff.state_changes(
-            ndb.get, pversion, v, prev_root, hash
-        )
+        yield pversion, v, hash, diff.state_changes(ndb.get, pversion, prev_root, hash)
 
         pversion = v
         prev_root = hash

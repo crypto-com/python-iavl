@@ -15,5 +15,5 @@ def test_state_changes(tmp_path):
     db = NodeDB(kvdb)
     for i, changes in enumerate(ChangeSets):
         assert changes == state_changes(
-            db.get, i, i + 1, db.get_root_hash(i), db.get_root_hash(i + 1)
+            db.get, i, db.get_root_hash(i), db.get_root_hash(i + 1)
         )

@@ -59,7 +59,7 @@ def split_operations(nodes1, nodes2) -> ChangeSet:
     return result
 
 
-def state_changes(get_node: GetNode, version, successor, root, successor_root):
+def state_changes(get_node: GetNode, version, root, successor_root):
     """
     extract state changes from two versions of the iavl tree.
 
