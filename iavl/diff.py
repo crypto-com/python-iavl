@@ -2,9 +2,8 @@
 tree diff algorithm between two versions
 """
 import binascii
-from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import List, NamedTuple, Tuple
+from typing import List, Tuple
 
 from cprotobuf import Field, ProtoEntity, decode_primitive, encode_primitive
 
