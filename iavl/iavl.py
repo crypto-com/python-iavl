@@ -507,7 +507,7 @@ def delete_version(
     predecessor: int,
     root: bytes,
     successor_root: bytes,
-) -> int:
+):
     """
     yield the orphaned nodes to delete
 

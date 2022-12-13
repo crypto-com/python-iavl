@@ -334,13 +334,13 @@ def visit_iavl_nodes(
     """
     stack: List[bytes] = [hash]
     while stack:
-        hash = stack.pop()
-        if isinstance(hash, PersistedNode):
+        hash_or_node = stack.pop()
+        if isinstance(hash_or_node, PersistedNode):
             # the postorder case, it's already expanded as PersistedNode
-            yield hash
+            yield hash_or_node
             continue
 
-        node = get_node(hash)
+        node = get_node(hash_or_node)
 
         if not preorder:
             # postorder, visit later
