@@ -492,7 +492,6 @@ def visualize_pruning(db, store, version):
         trace_get,
         version,
         predecessor,
-        successor,
         root1,
         root2,
     ):
