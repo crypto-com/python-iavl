@@ -136,3 +136,24 @@ def test_empty_tree(tmp_path):
     assert tree.remove("hello") is None
     tree.save_version()
     assert tree.version == 1
+
+
+def test_new_key(tmp_path):
+    dbpath = tmp_path / "basic_ops"
+    dbpath.mkdir()
+    print("db", dbpath)
+    kvdb = rocksdb.DB(str(dbpath), rocksdb.Options(create_if_missing=True))
+    db = NodeDB(kvdb)
+    tree = Tree(db, 0)
+    for i in range(4):
+        tree.set(f"key-{i}".encode(), b"1")
+    tree.save_version()
+
+    # the smallest key in the right half of the tree
+    assert tree.root_node().key == b"key-2"
+
+    # remove this key
+    tree.remove(b"key-2")
+
+    # check root node's key is changed
+    assert tree.root_node().key == b"key-3"
