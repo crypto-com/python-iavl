@@ -2,13 +2,17 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/master";
     flake-utils.url = "github:numtide/flake-utils";
+    cronos = {
+      url = "github:crypto-org-chain/cronos?ref=v1.0.9";
+      flake = false;
+    };
     rocksdb-src = {
       url = "github:facebook/rocksdb/v6.29.5";
       flake = false;
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, rocksdb-src }:
+  outputs = { self, nixpkgs, flake-utils, rocksdb-src, cronos }:
     let
       overrides = { poetry2nix, rocksdb, leveldb, lib }: poetry2nix.overrides.withDefaults
         (lib.composeManyExtensions [
@@ -65,6 +69,8 @@
             iavl-env-leveldb = pkgs.callPackage iavl-env { groups = [ "leveldb" ]; };
             iavl-cli = pkgs.callPackage iavl-cli { };
             iavl-cli-leveldb = pkgs.callPackage iavl-cli { groups = [ "leveldb" ]; };
+            rocksdb-tool = pkgs.rocksdb-tool.tools;
+            iavl-fix-discrepancies-script = pkgs.callPackage ./script.nix { };
           };
           defaultPackage = packages.iavl-cli;
           apps = {
@@ -84,6 +90,9 @@
             leveldb = pkgs.mkShell {
               buildInputs = [ packages.iavl-env-leveldb ];
             };
+            fix-discrepancies = pkgs.mkShell {
+              buildInputs = [ packages.iavl-env-leveldb packages.rocksdb-tool packages.iavl-fix-discrepancies-script.fix_discrepancies ];
+            };
           };
         }
       )
@@ -94,6 +103,7 @@
           version = "6.29.5";
           src = rocksdb-src;
         });
+        rocksdb-tool = final.callPackage (cronos + "/nix/rocksdb.nix") { };
       };
     };
 }
