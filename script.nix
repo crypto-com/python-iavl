@@ -1,5 +1,4 @@
 {
-  stdenv,
   writeText,
   writeShellScriptBin,
   app,
