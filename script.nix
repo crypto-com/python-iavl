@@ -31,6 +31,6 @@ rec {
     [ -z "$1" || -z "$2" ] && echo "Usage: $0 <db path> <height>
     Error: missing db path or height" && exit 1
     hex_height = $(python3 ${pythonScript}/bin/iavlScript.py $2)
-    ldb --db=$1 put "s/latest" 0x08bad4d705 --value_hex
+    ldb --db=$1 put "s/latest" $hex_height --value_hex
   '';
 }
