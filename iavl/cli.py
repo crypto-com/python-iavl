@@ -91,6 +91,36 @@ def root_node(db, store: List[str], version: Optional[int]):
 @click.option(
     "--db", help="path to application.db", type=click.Path(exists=True), required=True
 )
+@click.option("--store", "-s", required=True)
+@click.option("--reverse", is_flag=True, default=False)
+def root_versions(db, store: str, reverse: bool = False):
+    '''
+    iterate all root versions
+    '''
+    begin = store_prefix(store) + b"r"
+    end = store_prefix(store) + b"s" # exclusive
+
+    db = dbm.open(str(db), read_only=True)
+    it = db.iterkeys()
+    if not reverse:
+        it.seek(begin)
+        for k in it:
+            if k >= end:
+                break
+            print(int.from_bytes(k[len(begin):], 'big'))
+    else:
+        it = reversed(it)
+        it.seek_for_prev(end)
+        for k in it:
+            if k < begin:
+                break
+            print(int.from_bytes(k[len(begin):], 'big'))
+
+
+@cli.command()
+@click.option(
+    "--db", help="path to application.db", type=click.Path(exists=True), required=True
+)
 @click.option("--store", "-s")
 @click.argument("hash")
 def node(db, hash, store):
