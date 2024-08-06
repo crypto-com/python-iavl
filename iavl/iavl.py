@@ -1,22 +1,16 @@
 """
 Support modify iavl tree
 """
+
 import hashlib
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional, Union
 
 import cprotobuf
-
 import rocksdb
 
-from .utils import (
-    GetNode,
-    PersistedNode,
-    encode_bytes,
-    node_key,
-    root_key,
-    visit_iavl_nodes,
-)
+from .utils import (GetNode, PersistedNode, encode_bytes, node_key, root_key,
+                    visit_iavl_nodes)
 
 NodeRef = Union[bytes, "Node"]
 

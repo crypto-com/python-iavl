@@ -1,14 +1,16 @@
 """
 tree diff algorithm between two versions
 """
+
 import binascii
 from enum import IntEnum
 from typing import List, Tuple
 
 from cprotobuf import Field, ProtoEntity, decode_primitive, encode_primitive
 
-from .iavl import PersistedNode, Tree
-from .utils import GetNode, visit_iavl_nodes
+from . import dbm
+from .iavl import NodeDB, PersistedNode, Tree
+from .utils import GetNode, root_key, visit_iavl_nodes
 
 
 class Op(IntEnum):
@@ -183,3 +185,25 @@ def parse_change_set(data):
         items.append(item)
         offset += size
     return items
+
+
+def iter_state_changes(
+    db: dbm.DBM, ndb: NodeDB, start_version=0, end_version=None, prefix=b""
+):
+    from . import diff
+
+    pversion = ndb.prev_version(start_version) or 0
+    prev_root = ndb.get_root_hash(pversion)
+    it = db.iteritems()
+    it.seek(prefix + root_key(start_version))
+    for k, hash in it:
+        if not k.startswith(prefix + b"r"):
+            break
+        v = int.from_bytes(k[len(prefix) + 1 :], "big")
+        if end_version is not None and v >= end_version:
+            break
+
+        yield pversion, v, hash, diff.state_changes(ndb.get, pversion, prev_root, hash)
+
+        pversion = v
+        prev_root = hash
