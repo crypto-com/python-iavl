@@ -8,23 +8,11 @@ from typing import List, Optional
 import click
 from hexbytes import HexBytes
 
-from . import dbm, diff
-from .iavl import NodeDB, Tree, delete_version
-from .utils import (
-    decode_fast_node,
-    diff_iterators,
-    encode_stdint,
-    fast_node_key,
-    get_node,
-    get_root_node,
-    iavl_latest_version,
-    iter_fast_nodes,
-    iter_iavl_tree,
-    load_commit_infos,
-    root_key,
-    store_prefix,
-)
-from .visualize import visualize_iavl, visualize_pruned_nodes
+from . import dbm
+from .utils import (decode_fast_node, diff_iterators, encode_stdint,
+                    fast_node_key, get_node, get_root_node,
+                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
+                    load_commit_infos, root_key, store_prefix)
 
 
 @click.group
@@ -94,11 +82,11 @@ def root_node(db, store: List[str], version: Optional[int]):
 @click.option("--store", "-s", required=True)
 @click.option("--reverse", is_flag=True, default=False)
 def root_versions(db, store: str, reverse: bool = False):
-    '''
+    """
     iterate all root versions
-    '''
+    """
     begin = store_prefix(store) + b"r"
-    end = store_prefix(store) + b"s" # exclusive
+    end = store_prefix(store) + b"s"  # exclusive
 
     db = dbm.open(str(db), read_only=True)
     it = db.iterkeys()
@@ -107,14 +95,14 @@ def root_versions(db, store: str, reverse: bool = False):
         for k in it:
             if k >= end:
                 break
-            print(int.from_bytes(k[len(begin):], 'big'))
+            print(int.from_bytes(k[len(begin) :], "big"))
     else:
         it = reversed(it)
         it.seek_for_prev(end)
         for k in it:
             if k < begin:
                 break
-            print(int.from_bytes(k[len(begin):], 'big'))
+            print(int.from_bytes(k[len(begin) :], "big"))
 
 
 @cli.command()
@@ -371,6 +359,8 @@ def visualize(db, version, store=None, include_prev_version=False):
     visualize iavl tree with dot, example:
     $ iavl-cli visualize --version 9 --db db --store bank | dot -Tpdf > /tmp/tree.pdf
     """
+    from .visualize import visualize_iavl
+
     db = dbm.open(str(db), read_only=True)
     if version is None:
         version = iavl_latest_version(db, store)
@@ -412,10 +402,13 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
     with compatible format with file streamer.
     end_version is exclusive.
     """
+    from . import diff
+    from .iavl import NodeDB
+
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for _, v, _, changeset in iter_state_changes(
+    for _, v, _, changeset in diff.iter_state_changes(
         db, ndb, start_version=start_version, end_version=end_version, prefix=prefix
     ):
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
@@ -428,6 +421,8 @@ def print_changeset(file):
     """
     decode and print the content of changeset files
     """
+    from . import diff
+
     for item in diff.parse_change_set(Path(file).read_bytes()):
         print(json.dumps(item.as_json()))
 
@@ -447,10 +442,13 @@ def test_state_round_trip(db, store, start_version):
     extract state changes from iavl versions,
     reapply and check if we can get back the same root hash
     """
+    from . import diff
+    from .iavl import NodeDB, Tree
+
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for pversion, v, root, changeset in iter_state_changes(
+    for pversion, v, root, changeset in diff.iter_state_changes(
         db, ndb, start_version=start_version, prefix=prefix
     ):
         # re-apply changeset
@@ -469,26 +467,6 @@ def test_state_round_trip(db, store, start_version):
             )
 
 
-def iter_state_changes(
-    db: dbm.DBM, ndb: NodeDB, start_version=0, end_version=None, prefix=b""
-):
-    pversion = ndb.prev_version(start_version) or 0
-    prev_root = ndb.get_root_hash(pversion)
-    it = db.iteritems()
-    it.seek(prefix + root_key(start_version))
-    for k, hash in it:
-        if not k.startswith(prefix + b"r"):
-            break
-        v = int.from_bytes(k[len(prefix) + 1 :], "big")
-        if end_version is not None and v >= end_version:
-            break
-
-        yield pversion, v, hash, diff.state_changes(ndb.get, pversion, prev_root, hash)
-
-        pversion = v
-        prev_root = hash
-
-
 @cli.command()
 @click.option(
     "--db", help="path to application.db", type=click.Path(exists=True), required=True
@@ -503,6 +481,9 @@ def visualize_pruning(db, store, version):
     """
     used to analyzsis performance of pruning algorithm on production data.
     """
+    from .iavl import NodeDB, delete_version
+    from .visualize import visualize_pruned_nodes
+
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
@@ -545,6 +526,39 @@ def visualize_pruning(db, store, version):
     )
     g = visualize_pruned_nodes(successor, touched_nodes, deleted, ndb)
     print(g.source)
+
+
+@cli.group()
+def memiavl():
+    pass
+
+
+@memiavl.command()
+@click.option(
+    "--wal", help="path to wal file", type=click.Path(exists=True), required=True
+)
+def scan_wal(wal: str):
+    """
+    scan a wal file for changes and upgrades, example:
+    $ iavl-cli memiavl scan-wal --wal 00000000000000000001
+    """
+    from .memiavl import scan_wal
+
+    for entry in scan_wal(Path(wal).read_bytes()):
+        print("-----")
+        for cs in entry.changeset:
+            print(f"store: {cs.name}")
+            for pair in cs.changeset.pairs:
+                print(
+                    f"  key: {binascii.hexlify(pair.key).decode()} value: {binascii.hexlify(pair.value).decode()}"
+                )
+        for upgrade in entry.upgrades:
+            print(f"upgrade: {upgrade.name}", end="")
+            if upgrade.rename_from:
+                print(f", from {upgrade.rename_from}", end="")
+            if upgrade.delete:
+                print(f"deleted", end="")
+            print("")
 
 
 if __name__ == "__main__":
