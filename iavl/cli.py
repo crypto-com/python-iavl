@@ -376,12 +376,11 @@ def visualize(db, version, store=None, include_prev_version=False):
     if version is None:
         version = iavl_latest_version(db, store)
 
-    prefix = store_prefix(store) if store is not None else b""
-    root_hash = db.get(prefix + root_key(version))
+    root_hash = get_root_hash(db, store, version)
     root_hash2 = None
     if include_prev_version and version > 1:
-        root_hash2 = db.get(prefix + root_key(version - 1))
-    g = visualize_iavl(db, prefix, root_hash, version, root_hash2=root_hash2)
+        root_hash2 = get_root_hash(db, store, version - 1)
+    g = visualize_iavl(db, root_hash, version, root_hash2=root_hash2, store=store)
     print(g.source)
 
 

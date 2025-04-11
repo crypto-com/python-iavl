@@ -1,11 +1,11 @@
 import binascii
-from typing import List
+from typing import List, Optional
 
 from graphviz import Digraph
 from hexbytes import HexBytes
 
 from .iavl import NodeDB
-from .utils import PersistedNode, decode_node, node_key
+from .utils import PersistedNode, get_node
 
 
 def label(node: PersistedNode):
@@ -21,23 +21,19 @@ def label(node: PersistedNode):
 
 
 def visualize_iavl(
-    db, prefix: bytes, root_hash: bytes, version: int, root_hash2=None
+    db, root_hash: bytes, version: int, root_hash2=None, store: Optional[str] = None,
 ) -> Digraph:
     g = Digraph(comment="IAVL Tree")
 
-    def get_node(hash: bytes) -> PersistedNode:
-        n, _ = decode_node(db.get(prefix + node_key(hash)), hash)
-        return n
-
     def vis_node(hash: bytes, n: PersistedNode):
         style = "solid" if n.version == version else "filled"
-        g.node(HexBytes(hash).hex(), label=label(node), style=style)
+        g.node(HexBytes(hash).hex(), label=label(n), style=style)
 
     if root_hash2 is not None:
         stack: List[bytes] = [root_hash2]
         while stack:
             hash = stack.pop()
-            node = get_node(hash)
+            node = get_node(db, hash, store)
 
             vis_node(hash, node)
 
@@ -55,7 +51,7 @@ def visualize_iavl(
     stack: List[bytes] = [root_hash]
     while stack:
         hash = stack.pop()
-        node = get_node(hash)
+        node = get_node(db, hash, store)
 
         # don't duplicate nodes in compare mode
         if root_hash2 is None or node.version == version:
