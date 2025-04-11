@@ -9,6 +9,11 @@ from hexbytes import HexBytes
 from .dbm import DBM
 
 EMPTY_HASH = hashlib.sha256().digest()
+FAST_KEY_PREFIX = b"f"
+METADATA_KEY_PREFIX = b"m"
+NODE_KEY_PREFIX = b"n"
+ORPHAN_KEY_PREFIX = b"o"
+ROOT_KEY_PREFIX = b"r"
 GetNode = Callable[bytes, Optional["PersistedNode"]]
 
 
@@ -126,15 +131,15 @@ def prefix_iteritems(
 
 
 def root_key(v: int) -> bytes:
-    return b"r" + v.to_bytes(8, "big")
+    return ROOT_KEY_PREFIX + v.to_bytes(8, "big")
 
 
 def node_key(hash: bytes) -> bytes:
-    return b"n" + hash
+    return NODE_KEY_PREFIX + hash
 
 
 def fast_node_key(key: bytes) -> bytes:
-    return b"f" + key
+    return FAST_KEY_PREFIX + key
 
 
 def store_prefix(s: str) -> bytes:
@@ -157,7 +162,7 @@ def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
         return
     if k >= target:
         k = next(it)
-    if not k.startswith(prefix + b"r"):
+    if not k.startswith(prefix + ROOT_KEY_PREFIX):
         return
     # parse version from key
     return int.from_bytes(k[len(prefix) + 1 :], "big")
@@ -268,7 +273,7 @@ def iter_fast_nodes(db: DBM, store: str, start: Optional[bytes], end: Optional[b
     """
     it = db.iteritems()
 
-    prefix = store_prefix(store) + b"f"
+    prefix = store_prefix(store) + FAST_KEY_PREFIX
     if start is None:
         start = prefix
     else:

@@ -9,8 +9,8 @@ from typing import Callable, Dict, Optional, Union
 import cprotobuf
 import rocksdb
 
-from .utils import (GetNode, PersistedNode, encode_bytes, node_key, root_key,
-                    visit_iavl_nodes)
+from .utils import (ROOT_KEY_PREFIX, GetNode, PersistedNode, encode_bytes,
+                    node_key, root_key, visit_iavl_nodes)
 
 NodeRef = Union[bytes, "Node"]
 
@@ -104,7 +104,7 @@ class NodeDB:
             k = next(it, None)
             if k is None:
                 return
-        if not k.startswith(self.prefix + b"r"):
+        if not k.startswith(self.prefix + ROOT_KEY_PREFIX):
             return
 
         return int.from_bytes(k[len(self.prefix) + 1 :], "big")
@@ -119,7 +119,7 @@ class NodeDB:
         key = next(it, None)
         if key == target:
             key = next(it, None)
-        if key is None or not key.startswith(self.prefix + b"r"):
+        if key is None or not key.startswith(self.prefix + ROOT_KEY_PREFIX):
             return
         return int.from_bytes(key[len(self.prefix) + 1 :], "big")
 

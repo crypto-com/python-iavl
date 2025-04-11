@@ -10,7 +10,7 @@ from cprotobuf import Field, ProtoEntity, decode_primitive, encode_primitive
 
 from . import dbm
 from .iavl import NodeDB, PersistedNode, Tree
-from .utils import GetNode, root_key, visit_iavl_nodes
+from .utils import ROOT_KEY_PREFIX, GetNode, root_key, visit_iavl_nodes
 
 
 class Op(IntEnum):
@@ -197,7 +197,7 @@ def iter_state_changes(
     it = db.iteritems()
     it.seek(prefix + root_key(start_version))
     for k, hash in it:
-        if not k.startswith(prefix + b"r"):
+        if not k.startswith(prefix + ROOT_KEY_PREFIX):
             break
         v = int.from_bytes(k[len(prefix) + 1 :], "big")
         if end_version is not None and v >= end_version:

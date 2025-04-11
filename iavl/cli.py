@@ -9,7 +9,8 @@ import click
 from hexbytes import HexBytes
 
 from . import dbm
-from .utils import (decode_fast_node, diff_iterators, encode_stdint,
+from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
+                    decode_fast_node, diff_iterators, encode_stdint,
                     fast_node_key, get_node, get_root_node,
                     iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
                     load_commit_infos, root_key, store_prefix)
@@ -85,7 +86,7 @@ def root_versions(db, store: str, reverse: bool = False):
     """
     iterate all root versions
     """
-    begin = store_prefix(store) + b"r"
+    begin = store_prefix(store) + ROOT_KEY_PREFIX
     end = store_prefix(store) + b"s"  # exclusive
 
     db = dbm.open(str(db), read_only=True)
@@ -155,7 +156,7 @@ def metadata(db, store):
         raise click.UsageError("no store names are provided")
     db = dbm.open(str(db), read_only=True)
     for s in store:
-        bz = db.get(store_prefix(s) + b"m" + b"storage_version")
+        bz = db.get(store_prefix(s) + METADATA_KEY_PREFIX + b"storage_version")
         print(f"{s} storage version: {bz.decode()}")
         print(f"{s} latest version: {iavl_latest_version(db, s)}")
 
@@ -323,7 +324,7 @@ def fast_rollback(
             ver = iavl_latest_version(db, info.name)
 
             print("delete orphan entries created since target version")
-            orphan_prefix = prefix + b"o" + target.to_bytes(8, "big")
+            orphan_prefix = prefix + ORPHAN_KEY_PREFIX + target.to_bytes(8, "big")
             it = db.iterkeys()
             it.seek(orphan_prefix)
             for k in it:
