@@ -10,7 +10,7 @@ from hexbytes import HexBytes
 
 from . import dbm
 from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
-                    decode_fast_node, diff_iterators, encode_stdint,
+                    decode_fast_node, diff_iterators, encode_stdint, parse_node_key,
                     fast_node_key, get_node, get_root_hash, get_root_node,
                     iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
                     load_commit_infos, root_key, store_prefix)
@@ -86,17 +86,27 @@ def root_versions(db, store: str, reverse: bool = False):
     """
     iterate all root versions
     """
-    begin = store_prefix(store) + ROOT_KEY_PREFIX
-    end = store_prefix(store) + b"s"  # exclusive
+    prefix = store_prefix(store)
+    begin = prefix + ROOT_KEY_PREFIX
+    end = prefix + b"s"  # exclusive
 
     db = dbm.open(str(db), read_only=True)
     it = db.iterkeys()
     if not reverse:
         it.seek(begin)
         for k in it:
-            if k >= end:
-                break
-            print(int.from_bytes(k[len(begin) :], "big"))
+            # legacy
+            if k.startswith(prefix + ROOT_KEY_PREFIX):
+                if k >= end:
+                    break
+                print(int.from_bytes(k[len(begin) :], "big"))
+            else:
+                k = k[len(prefix):]
+                if k >= end:
+                    break
+                version, _ = parse_node_key(k)
+                print(version)
+                
     else:
         it = reversed(it)
         it.seek_for_prev(end)
