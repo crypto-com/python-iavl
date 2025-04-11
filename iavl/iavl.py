@@ -10,7 +10,7 @@ import cprotobuf
 import rocksdb
 
 from .utils import (ROOT_KEY_PREFIX, GetNode, PersistedNode, encode_bytes,
-                    node_key, root_key, visit_iavl_nodes)
+                    legacy_node_key, root_key, visit_iavl_nodes)
 
 NodeRef = Union[bytes, "Node"]
 
@@ -35,7 +35,7 @@ class NodeDB:
         try:
             return self.cache[hash]
         except KeyError:
-            bz = self.db.get(self.prefix + node_key(hash))
+            bz = self.db.get(self.prefix + legacy_node_key(hash))
             if bz is None:
                 return
             node = PersistedNode.decode(bz, hash)
@@ -52,7 +52,7 @@ class NodeDB:
         "remove node"
         if self.batch is None:
             self.batch = rocksdb.WriteBatch()
-        self.batch.delete(node_key(hash))
+        self.batch.delete(legacy_node_key(hash))
         self.cache.pop(hash, None)
 
     def batch_remove_root_hash(self, version: int):
@@ -64,7 +64,7 @@ class NodeDB:
         if self.batch is None:
             self.batch = rocksdb.WriteBatch()
         self.cache[hash] = node
-        self.batch.put(node_key(hash), node.encode())
+        self.batch.put(legacy_node_key(hash), node.encode())
 
     def batch_set_root_hash(self, version: int, hash: bytes):
         if self.batch is None:

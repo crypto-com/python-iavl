@@ -11,7 +11,7 @@ from hexbytes import HexBytes
 from . import dbm
 from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
                     decode_fast_node, diff_iterators, encode_stdint,
-                    fast_node_key, get_node, get_root_node,
+                    fast_node_key, get_node, get_root_hash, get_root_node,
                     iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
                     load_commit_infos, root_key, store_prefix)
 
@@ -43,7 +43,7 @@ def root_hash(db, store: List[str], version: Optional[int]):
     for s in store:
         if version is None:
             version = iavl_latest_version(db, s)
-        bz = db.get(store_prefix(s) + root_key(version))
+        bz = get_root_hash(db, s, version)
         print(f"{s}: {binascii.hexlify(bz or b'').decode()}")
 
 

@@ -1,7 +1,8 @@
 import hashlib
 import itertools
+import struct
 from collections.abc import Iterator
-from typing import Callable, List, NamedTuple, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import cprotobuf
 from hexbytes import HexBytes
@@ -11,9 +12,10 @@ from .dbm import DBM
 EMPTY_HASH = hashlib.sha256().digest()
 FAST_KEY_PREFIX = b"f"
 METADATA_KEY_PREFIX = b"m"
-NODE_KEY_PREFIX = b"n"
+NODE_KEY_PREFIX = b"s"
 ORPHAN_KEY_PREFIX = b"o"
 ROOT_KEY_PREFIX = b"r"
+LEGACY_NODE_KEY_PREFIX = b"n"
 GetNode = Callable[bytes, Optional["PersistedNode"]]
 
 
@@ -36,24 +38,34 @@ class StdInt(cprotobuf.ProtoEntity):
     value = cprotobuf.Field("uint64", 1)
 
 
-class PersistedNode(NamedTuple):
+class PersistedNode:
     """
     immutable nodes that's loaded from and save to db
     """
 
-    height: int  # height of subtree
-    size: int  # size of subtree
-    version: int  # the version created at
-    key: bytes
+    def __init__(
+        self,
+        height: int,
+        size: int,
+        version: int,
+        key: bytes,
+        value: Optional[bytes],
+        left_node_ref: Optional[bytes],
+        right_node_ref: Optional[bytes],
+        hash: bytes,
+    ):
+        self.height = height  # height of subtree
+        self.size = size  # size of subtree
+        self.version = version  # the version created at
+        self.key = key
 
-    # only in leaf node
-    value: Optional[bytes]
+        # only in leaf node
+        self.value = value
 
-    # only in branch nodes
-    left_node_ref: Optional[bytes]
-    right_node_ref: Optional[bytes]
-
-    hash: bytes
+        # only in branch nodes
+        self.left_node_ref = left_node_ref
+        self.right_node_ref = right_node_ref
+        self.hash = hash
 
     def is_leaf(self):
         return self.height == 0
@@ -67,16 +79,10 @@ class PersistedNode(NamedTuple):
             return ndb.get(self.right_node_ref)
 
     def as_json(self):
-        d = self._asdict()
-        d["key"] = HexBytes(self.key).hex()
-        if self.value is not None:
-            d["value"] = HexBytes(self.value).hex()
-        if self.left_node_ref is not None:
-            d["left_node_ref"] = HexBytes(self.left_node_ref).hex()
-        if self.right_node_ref is not None:
-            d["right_node_ref"] = HexBytes(self.right_node_ref).hex()
-        if self.hash is not None:
-            d["hash"] = HexBytes(self.hash).hex()
+        d = self.__dict__.copy()
+        for key, value in d.items():
+            if isinstance(value, bytes):
+                d[key] = HexBytes(value).hex()
         return d
 
     def encode(self):
@@ -84,11 +90,6 @@ class PersistedNode(NamedTuple):
 
     def calc_balance(self, ndb):
         return self.left_node(ndb).height - self.right_node(ndb).height
-
-    @staticmethod
-    def decode(bz: bytes, hash: bytes):
-        nd, _ = decode_node(bz, hash)
-        return nd
 
 
 def incr_bytes(prefix: bytes) -> bytes:
@@ -130,12 +131,40 @@ def prefix_iteritems(
     return ((k.removeprefix(prefix), v) for k, v in it)
 
 
+def root_key_suffix(v: int) -> bytes:
+    return struct.pack(">qI", v, 1)
+
+
+def node_key_suffix(v, n: int) -> bytes:
+    return struct.pack(">qI", v, n)
+
+
 def root_key(v: int) -> bytes:
+    return NODE_KEY_PREFIX + root_key_suffix(v)
+
+
+def legacy_root_key(v: int) -> bytes:
     return ROOT_KEY_PREFIX + v.to_bytes(8, "big")
 
 
 def node_key(hash: bytes) -> bytes:
     return NODE_KEY_PREFIX + hash
+
+
+def legacy_node_key(hash: bytes) -> bytes:
+    return LEGACY_NODE_KEY_PREFIX + hash
+
+
+def parse_node_key(key: bytes) -> tuple[int, int]:
+    """
+    parse version and nonce from given key
+    """
+    if not key.startswith(NODE_KEY_PREFIX):
+        raise ValueError("Key must start with root prefix 's'")
+    key = key[len(NODE_KEY_PREFIX) :]
+    if len(key) != 12:
+        raise ValueError("Key must be 12 bytes after prefix")
+    return struct.unpack(">qI", key)
 
 
 def fast_node_key(key: bytes) -> bytes:
@@ -148,7 +177,7 @@ def store_prefix(s: str) -> bytes:
     return b"s/k:%s/" % s.encode()
 
 
-def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
+def prev_version_with_legacy(db: DBM, store: str, v: int) -> tuple[Optional[int], bool]:
     it = reversed(db.iterkeys())
     prefix = store_prefix(store) if store is not None else b""
     target = prefix + root_key(v)
@@ -160,12 +189,28 @@ def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
     if k is None:
         # empty db
         return
+
     if k >= target:
-        k = next(it)
-    if not k.startswith(prefix + ROOT_KEY_PREFIX):
-        return
-    # parse version from key
-    return int.from_bytes(k[len(prefix) + 1 :], "big")
+        k = next(it, None)
+        if k is None:
+            return
+
+    if k.startswith(prefix + ROOT_KEY_PREFIX):
+        # parse version from legacy key
+        return int.from_bytes(k[len(prefix) + 1 :], "big"), True
+    elif k.startswith(prefix + NODE_KEY_PREFIX):
+        k = k[len(prefix) :]
+        version, _ = parse_node_key(k)
+        return version, False
+
+
+def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
+    res, _ = prev_version_with_legacy(db, store, v)
+    return res
+
+
+def iavl_latest_version_with_legacy(db: DBM, store: str) -> tuple[Optional[int], bool]:
+    return prev_version_with_legacy(db, store, 1 << 63 - 1)
 
 
 def iavl_latest_version(db: DBM, store: str) -> Optional[int]:
@@ -176,6 +221,10 @@ def decode_bytes(bz: bytes) -> (bytes, int):
     l, n = cprotobuf.decode_primitive(bz, "uint64")
     assert l + n <= len(bz)
     return bz[n : n + l], n + l
+
+
+def decode_varint(bz: bytes) -> (int, int):
+    return cprotobuf.decode_primitive(bz, "sint64")
 
 
 def encode_bytes(bz: bytes) -> List[bytes]:
@@ -198,14 +247,18 @@ def encode_node(node: PersistedNode) -> bytes:
     return b"".join(chunks)
 
 
-def decode_node(bz: bytes, hash: bytes) -> (PersistedNode, int):
+def decode_node(bz: bytes, hash: bytes, legacy: bool) -> (PersistedNode, int):
     offset = 0
     height, n = cprotobuf.decode_primitive(bz[offset:], "sint64")
+    if height < 0:
+        return None, offset
     offset += n
     size, n = cprotobuf.decode_primitive(bz[offset:], "sint64")
     offset += n
-    version, n = cprotobuf.decode_primitive(bz[offset:], "sint64")
-    offset += n
+    version = None
+    if legacy:
+        version, n = cprotobuf.decode_primitive(bz[offset:], "sint64")
+        offset += n
     key, n = decode_bytes(bz[offset:])
     offset += n
 
@@ -216,11 +269,31 @@ def decode_node(bz: bytes, hash: bytes) -> (PersistedNode, int):
         value, n = decode_bytes(bz[offset:])
         offset += n
     else:
-        # container node, read children
-        left_hash, n = decode_bytes(bz[offset:])
-        offset += n
-        right_hash, n = decode_bytes(bz[offset:])
-        offset += n
+        if legacy:
+            # container node, read children
+            left_hash, n = decode_bytes(bz[offset:])
+            offset += n
+            right_hash, n = decode_bytes(bz[offset:])
+            offset += n
+        else:
+            # hash
+            _, n = decode_bytes(bz[offset:])
+            offset += n
+            # mode
+            _, n = decode_varint(bz[offset:])
+            offset += n
+            left_version = right_version = left_nonce = right_nonce = None
+            left_version, n = decode_varint(bz[offset:])
+            offset += n
+            left_nonce, n = decode_varint(bz[offset:])
+            offset += n
+            right_version, n = decode_varint(bz[offset:])
+            offset += n
+            right_nonce, n = decode_varint(bz[offset:])
+            left_hash = node_key_suffix(left_version, left_nonce)
+            right_hash = node_key_suffix(right_version, right_nonce)
+    if not legacy:
+        version, _ = parse_node_key(node_key(hash))
     return (
         PersistedNode(
             height=height,
@@ -246,24 +319,36 @@ def decode_fast_node(bz: bytes) -> (int, bytes, int):
 
 
 def get_node(
-    db: DBM, hash: bytes, store: Optional[str] = None
+    db: DBM,
+    hash: bytes,
+    store: Optional[str] = None,
 ) -> Optional[PersistedNode]:
-    prefix = store_prefix(store) if store is not None else b""
-    bz = db.get(prefix + node_key(hash))
-    if not bz:
-        return
-    node, _ = decode_node(bz, hash)
-    return node
+    prefix = store_prefix(store) if store else b""
+    for key_func in (node_key, legacy_node_key):
+        key = key_func(hash)
+        bz = db.get(prefix + key)
+        if bz:
+            legacy = key_func is legacy_node_key
+            node, _ = decode_node(bz, hash, legacy)
+            return node
+    return None
 
 
 def get_root_node(
     db: DBM, version: int, store: Optional[str] = None
 ) -> Optional[PersistedNode]:
-    prefix = store_prefix(store) if store is not None else b""
-    hash = db.get(prefix + root_key(version))
-    if not hash:
-        return
+    hash = get_root_hash(db, store, version)
     return get_node(db, hash, store)
+
+
+def get_root_hash(db: DBM, store: str, version: int) -> Optional[bytes]:
+    prefix = store_prefix(store) if store else b""
+    bz = db.get(prefix + root_key(version))
+    if not bz:
+        return db.get(prefix + legacy_root_key(version))
+    key = root_key(version)
+    _, nonce = parse_node_key(key)
+    return root_key_suffix(nonce)
 
 
 def iter_fast_nodes(db: DBM, store: str, start: Optional[bytes], end: Optional[bytes]):
@@ -309,18 +394,15 @@ def iter_iavl_tree(
         # empty root node
         return
 
-    prefix = store_prefix(store) if store is not None else b""
-
-    def get_node(hash: bytes) -> PersistedNode:
-        n, _ = decode_node(db.get(prefix + node_key(hash)), hash)
-        return n
+    def get(hash: bytes) -> PersistedNode:
+        return get_node(db, hash, store)
 
     def prune_check(node: PersistedNode) -> (bool, bool):
         prune_left = start is not None and node.key <= start
         prune_right = end is not None and node.key >= end
         return prune_left, prune_right
 
-    for node in visit_iavl_nodes(get_node, prune_check, node_hash):
+    for node in visit_iavl_nodes(get, prune_check, node_hash):
         if node.is_leaf() and within_range(node.key, start, end):
             yield node.key, node.value
 
@@ -345,7 +427,12 @@ def visit_iavl_nodes(
             yield hash_or_node
             continue
 
+        if hash_or_node is None:
+            continue
+
         node = get_node(hash_or_node)
+        if node is None:
+            continue
 
         if not preorder:
             # postorder, visit later
