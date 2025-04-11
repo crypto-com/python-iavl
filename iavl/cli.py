@@ -222,7 +222,7 @@ def range_iavl(db, store, version, start, end, output_value):
     # find root node first
     if version is None:
         version = iavl_latest_version(db, store)
-    root_hash = db.get(store_prefix(store) + root_key(version))
+    root_hash = get_root_hash(db, store, version)
     for k, v in iter_iavl_tree(db, store, root_hash, start, end):
         if output_value:
             print(f"{HexBytes(k).hex()} {HexBytes(v).hex()}")
