@@ -10,7 +10,7 @@ import cprotobuf
 import rocksdb
 
 from .utils import (ROOT_KEY_PREFIX, GetNode, PersistedNode, encode_bytes,
-                    legacy_node_key, root_key, visit_iavl_nodes)
+                    decode_node, legacy_node_key, node_key, legacy_root_key, root_key, visit_iavl_nodes)
 
 NodeRef = Union[bytes, "Node"]
 
@@ -35,12 +35,14 @@ class NodeDB:
         try:
             return self.cache[hash]
         except KeyError:
-            bz = self.db.get(self.prefix + legacy_node_key(hash))
-            if bz is None:
-                return
-            node = PersistedNode.decode(bz, hash)
-            self.cache[hash] = node
-            return node
+            for key_func in (node_key, legacy_node_key):
+                key = key_func(hash)
+                bz = self.db.get(self.prefix + key)
+                if bz:
+                    legacy = key_func is legacy_node_key
+                    node, _ = decode_node(bz, hash, legacy)
+                    return node
+            return None
 
     def resolve_node(self, ref: NodeRef) -> Union["Node", PersistedNode, None]:
         if isinstance(ref, Node):
@@ -114,7 +116,7 @@ class NodeDB:
         return the closest version that's smaller than the target
         """
         it = reversed(self.db.iterkeys())
-        target = self.prefix + root_key(v)
+        target = self.prefix + legacy_root_key(v)
         it.seek_for_prev(target)
         key = next(it, None)
         if key == target:

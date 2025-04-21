@@ -10,7 +10,7 @@ from cprotobuf import Field, ProtoEntity, decode_primitive, encode_primitive
 
 from . import dbm
 from .iavl import NodeDB, PersistedNode, Tree
-from .utils import ROOT_KEY_PREFIX, GetNode, root_key, visit_iavl_nodes
+from .utils import ROOT_KEY_PREFIX, NODE_KEY_PREFIX, GetNode, root_key, legacy_root_key, parse_node_key, visit_iavl_nodes, node_key_suffix
 
 
 class Op(IntEnum):
@@ -188,18 +188,25 @@ def parse_change_set(data):
 
 
 def iter_state_changes(
-    db: dbm.DBM, ndb: NodeDB, start_version=0, end_version=None, prefix=b""
+    db: dbm.DBM, ndb: NodeDB, start_version=0, end_version=None, prefix=b"", legacy=False,
 ):
     from . import diff
 
     pversion = ndb.prev_version(start_version) or 0
     prev_root = ndb.get_root_hash(pversion)
     it = db.iteritems()
-    it.seek(prefix + root_key(start_version))
+    key = legacy_root_key(start_version) if legacy else root_key(start_version)
+    it.seek(prefix + key)
+    key_prefix = ROOT_KEY_PREFIX if legacy else NODE_KEY_PREFIX
     for k, hash in it:
-        if not k.startswith(prefix + ROOT_KEY_PREFIX):
+        if not k.startswith(prefix + key_prefix):
             break
-        v = int.from_bytes(k[len(prefix) + 1 :], "big")
+        if legacy:
+            v = int.from_bytes(k[len(prefix) + 1 :], "big")
+        else:
+            k = k[len(prefix):]
+            v, n = parse_node_key(k)
+            hash = node_key_suffix(v, n)
         if end_version is not None and v >= end_version:
             break
 

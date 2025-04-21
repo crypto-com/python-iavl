@@ -406,7 +406,8 @@ def visualize(db, version, store=None, include_prev_version=False):
     type=click.Path(exists=True),
     required=True,
 )
-def dump_changesets(db, start_version, end_version, store: Optional[str], out_dir: str):
+@click.option("--legacy", is_flag=True, default=False)
+def dump_changesets(db, start_version, end_version, store: Optional[str], out_dir: str, legacy: bool = False):
     """
     extract changeset by comparing iavl versions and save in files
     with compatible format with file streamer.
@@ -419,7 +420,7 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
     for _, v, _, changeset in diff.iter_state_changes(
-        db, ndb, start_version=start_version, end_version=end_version, prefix=prefix
+        db, ndb, start_version=start_version, end_version=end_version, prefix=prefix, legacy=legacy,
     ):
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
