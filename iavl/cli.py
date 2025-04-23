@@ -10,10 +10,11 @@ from hexbytes import HexBytes
 
 from . import dbm
 from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
-                    decode_fast_node, diff_iterators, encode_stdint, parse_node_key,
-                    fast_node_key, get_node, get_root_hash, get_root_node, legacy_root_key,
-                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree, iavl_latest_version_with_legacy,
-                    load_commit_infos, root_key, store_prefix)
+                    decode_fast_node, diff_iterators, encode_stdint,
+                    fast_node_key, get_node, get_root_hash, get_root_node,
+                    iavl_latest_version, iavl_latest_version_with_legacy,
+                    iter_fast_nodes, iter_iavl_tree, legacy_root_key,
+                    load_commit_infos, parse_node_key, root_key, store_prefix)
 
 
 @click.group
@@ -101,12 +102,11 @@ def root_versions(db, store: str, reverse: bool = False):
                     break
                 print(int.from_bytes(k[len(begin) :], "big"))
             else:
-                k = k[len(prefix):]
+                k = k[len(prefix) :]
                 if k >= end:
                     break
                 version, _ = parse_node_key(k)
                 print(version)
-                
     else:
         it = reversed(it)
         it.seek_for_prev(end)
@@ -409,7 +409,14 @@ def visualize(db, version, store=None, include_prev_version=False):
     required=True,
 )
 @click.option("--legacy", is_flag=True, default=False)
-def dump_changesets(db, start_version, end_version, store: Optional[str], out_dir: str, legacy: bool = False):
+def dump_changesets(
+    db,
+    start_version,
+    end_version,
+    store: Optional[str],
+    out_dir: str,
+    legacy: bool = False,
+):
     """
     extract changeset by comparing iavl versions and save in files
     with compatible format with file streamer.
@@ -422,7 +429,12 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
     for _, v, _, changeset in diff.iter_state_changes(
-        db, ndb, start_version=start_version, end_version=end_version, prefix=prefix, legacy=legacy,
+        db,
+        ndb,
+        start_version=start_version,
+        end_version=end_version,
+        prefix=prefix,
+        legacy=legacy,
     ):
         with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
@@ -490,7 +502,8 @@ def test_state_round_trip(db, store, start_version):
     help="the version to prune",
     default=1,
 )
-def visualize_pruning(db, store, version):
+@click.option("--legacy", is_flag=True, default=False)
+def visualize_pruning(db, store, version, legacy: bool = False):
     """
     used to analyzsis performance of pruning algorithm on production data.
     """
@@ -500,8 +513,8 @@ def visualize_pruning(db, store, version):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    predecessor = ndb.prev_version(version) or 0
-    successor = ndb.next_version(version)
+    predecessor = ndb.prev_version(version, legacy) or 0
+    successor = ndb.next_version(version, legacy)
     root1 = ndb.get_root_hash(version)
     root2 = ndb.get_root_hash(successor)
 
