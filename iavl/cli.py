@@ -462,7 +462,8 @@ def print_changeset(file):
     help="the version to start check",
     default=1,
 )
-def test_state_round_trip(db, store, start_version):
+@click.option("--legacy", is_flag=True, default=False)
+def test_state_round_trip(db, store, start_version, legacy: bool = False):
     """
     extract state changes from iavl versions,
     reapply and check if we can get back the same root hash
@@ -474,7 +475,11 @@ def test_state_round_trip(db, store, start_version):
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
     for pversion, v, root, changeset in diff.iter_state_changes(
-        db, ndb, start_version=start_version, prefix=prefix
+        db,
+        ndb,
+        start_version=start_version,
+        prefix=prefix,
+        legacy=legacy,
     ):
         # re-apply changeset
         tree = Tree(ndb, pversion)
@@ -583,7 +588,7 @@ def scan_wal(wal: str):
             if upgrade.rename_from:
                 print(f", from {upgrade.rename_from}", end="")
             if upgrade.delete:
-                print(f"deleted", end="")
+                print("deleted", end="")
             print("")
 
 
