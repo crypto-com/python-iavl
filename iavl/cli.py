@@ -11,8 +11,8 @@ from hexbytes import HexBytes
 from . import dbm
 from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
                     decode_fast_node, diff_iterators, encode_stdint, parse_node_key,
-                    fast_node_key, get_node, get_root_hash, get_root_node,
-                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
+                    fast_node_key, get_node, get_root_hash, get_root_node, legacy_root_key,
+                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree, iavl_latest_version_with_legacy,
                     load_commit_infos, root_key, store_prefix)
 
 
@@ -279,8 +279,10 @@ def diff_fastnode(db, store, start, end, output_value):
     it1 = iter_fast_nodes(db, store, start, end)
 
     # find root node first
-    version = iavl_latest_version(db, store)
-    root_hash = db.get(store_prefix(store) + root_key(version))
+    version, legacy = iavl_latest_version_with_legacy(db, store)
+    prefix = store_prefix(store) if store is not None else b""
+    suffix = legacy_root_key(version) if legacy else root_key(version)
+    root_hash = db.get(prefix + suffix)
     it2 = iter_iavl_tree(db, store, root_hash, start, end)
 
     for status, k, v in diff_iterators(it1, it2):
