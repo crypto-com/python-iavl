@@ -14,7 +14,7 @@ from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
                     fast_node_key, get_node, get_root_hash, get_root_node,
                     iavl_latest_version, iavl_latest_version_with_legacy,
                     iter_fast_nodes, iter_iavl_tree, legacy_root_key,
-                    load_commit_infos, parse_node_key, root_key, store_prefix)
+                    load_commit_infos, parse_node_key, root_key, store_prefix, node_key_suffix)
 
 
 @click.group
@@ -474,7 +474,7 @@ def test_state_round_trip(db, store, start_version, legacy: bool = False):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for pversion, v, _, root, changeset in diff.iter_state_changes(
+    for pversion, v, n, root, changeset in diff.iter_state_changes(
         db,
         ndb,
         start_version=start_version,
@@ -485,6 +485,8 @@ def test_state_round_trip(db, store, start_version, legacy: bool = False):
         tree = Tree(ndb, pversion)
         diff.apply_change_set(tree, changeset)
         tmp = tree.save_version(dry_run=True)
+        if not legacy:
+            tmp = node_key_suffix(v, n)
         if (root or hashlib.sha256().digest()) == tmp:
             print(v, len(changeset), "ok")
         else:
