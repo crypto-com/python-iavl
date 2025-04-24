@@ -428,7 +428,7 @@ def dump_changesets(
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for _, v, _, changeset in diff.iter_state_changes(
+    for _, v, n, _, changeset in diff.iter_state_changes(
         db,
         ndb,
         start_version=start_version,
@@ -436,7 +436,7 @@ def dump_changesets(
         prefix=prefix,
         legacy=legacy,
     ):
-        with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
+        with (Path(out_dir) / f"block-{v}-{n}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
 
 
@@ -474,7 +474,7 @@ def test_state_round_trip(db, store, start_version, legacy: bool = False):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for pversion, v, root, changeset in diff.iter_state_changes(
+    for pversion, v, _, root, changeset in diff.iter_state_changes(
         db,
         ndb,
         start_version=start_version,
