@@ -16,7 +16,7 @@ def test_prune_tree(tmp_path):
     latest_version = db.latest_version()
     for i in range(1, latest_version):
         print("delete version", i)
-        assert EXPECT_OUTPUT[i + 1].orphaned == db.delete_version(i)
+        assert EXPECT_OUTPUT[i + 1].orphaned == db.delete_version(i, legacy=True)
         # check the integrity of the other versions
         for j in range(i + 1, latest_version):
             for _ in iter_iavl_tree(kvdb, None, db.get_root_hash(j), None, None):

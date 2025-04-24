@@ -188,12 +188,12 @@ def prev_version_with_legacy(db: DBM, store: str, v: int) -> tuple[Optional[int]
         k = next(it, None)
     if k is None:
         # empty db
-        return
+        return None, False
 
     if k >= target:
         k = next(it, None)
         if k is None:
-            return
+            return None, False
 
     if k.startswith(prefix + ROOT_KEY_PREFIX):
         # parse version from legacy key
