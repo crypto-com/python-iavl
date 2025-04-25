@@ -1,5 +1,6 @@
 from iavl.utils import NODE_KEY_PREFIX, node_key_suffix, parse_node_key
 
+
 def test_parse_key():
     v = 1234567890123456789
     n = 1

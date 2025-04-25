@@ -21,7 +21,11 @@ def label(node: PersistedNode):
 
 
 def visualize_iavl(
-    db, root_hash: bytes, version: int, root_hash2=None, store: Optional[str] = None,
+    db,
+    root_hash: bytes,
+    version: int,
+    root_hash2=None,
+    store: Optional[str] = None,
 ) -> Digraph:
     g = Digraph(comment="IAVL Tree")
 

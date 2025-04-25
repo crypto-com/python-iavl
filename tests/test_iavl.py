@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import rocksdb
 from hexbytes import HexBytes
+
 from iavl.diff import Op, apply_change_set
 from iavl.iavl import NodeDB, Tree
 

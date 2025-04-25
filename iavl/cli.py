@@ -14,7 +14,8 @@ from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
                     fast_node_key, get_node, get_root_hash, get_root_node,
                     iavl_latest_version, iavl_latest_version_with_legacy,
                     iter_fast_nodes, iter_iavl_tree, legacy_root_key,
-                    load_commit_infos, parse_node_key, root_key, store_prefix, node_key_suffix)
+                    load_commit_infos, node_key_suffix, parse_node_key,
+                    root_key, store_prefix)
 
 
 @click.group
@@ -97,11 +98,11 @@ def root_versions(db, store: str, reverse: bool = False):
     for k in it:
         # legacy
         if k.startswith(prefix + ROOT_KEY_PREFIX):
-            if k[:len(prefix)] != prefix:
+            if k[: len(prefix)] != prefix:
                 break
             res.append(int.from_bytes(k[len(begin) :], "big"))
         else:
-            if k[:len(prefix)] != prefix:
+            if k[: len(prefix)] != prefix:
                 break
             k = k[len(prefix) :]
             version, nonce = parse_node_key(k)
@@ -577,9 +578,9 @@ def scan_wal(wal: str):
         for cs in entry.changeset:
             print(f"store: {cs.name}")
             for pair in cs.changeset.pairs:
-                print(
-                    f"  key: {binascii.hexlify(pair.key).decode()} value: {binascii.hexlify(pair.value).decode()}"
-                )
+                key = binascii.hexlify(pair.key).decode()
+                value = binascii.hexlify(pair.value).decode()
+                print(f"  key: {key} value: {value}")
         for upgrade in entry.upgrades:
             print(f"upgrade: {upgrade.name}", end="")
             if upgrade.rename_from:

@@ -55,5 +55,5 @@ def open(dir, read_only: bool = False):
     return LevelDB(plyvel.DB(str(dir)))
 
 
-def WriteBatch(db):
+def WriteBatch(db):  # noqa: N802
     return db.db.write_batch()
