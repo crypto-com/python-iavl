@@ -89,31 +89,26 @@ def root_versions(db, store: str, reverse: bool = False):
     """
     prefix = store_prefix(store)
     begin = prefix + ROOT_KEY_PREFIX
-    end = prefix + b"s"  # exclusive
 
     db = dbm.open(str(db), read_only=True)
     it = db.iterkeys()
-    if not reverse:
-        it.seek(begin)
-        for k in it:
-            # legacy
-            if k.startswith(prefix + ROOT_KEY_PREFIX):
-                if k >= end:
-                    break
-                print(int.from_bytes(k[len(begin) :], "big"))
-            else:
-                k = k[len(prefix) :]
-                if k >= end:
-                    break
-                version, _ = parse_node_key(k)
-                print(version)
-    else:
-        it = reversed(it)
-        it.seek_for_prev(end)
-        for k in it:
-            if k < begin:
+    res = []
+    it.seek(begin)
+    for k in it:
+        # legacy
+        if k.startswith(prefix + ROOT_KEY_PREFIX):
+            if k[:len(prefix)] != prefix:
                 break
-            print(int.from_bytes(k[len(begin) :], "big"))
+            res.append(int.from_bytes(k[len(begin) :], "big"))
+        else:
+            if k[:len(prefix)] != prefix:
+                break
+            k = k[len(prefix) :]
+            version, nonce = parse_node_key(k)
+            res.append(f"{version}-{nonce}")
+    if reverse:
+        res = reversed(res)
+    print(*res, sep="\n")
 
 
 @cli.command()
