@@ -9,10 +9,14 @@ import click
 from hexbytes import HexBytes
 
 from . import dbm
-from .utils import (decode_fast_node, diff_iterators, encode_stdint,
-                    fast_node_key, get_node, get_root_node,
-                    iavl_latest_version, iter_fast_nodes, iter_iavl_tree,
-                    load_commit_infos, root_key, store_prefix)
+from .utils import (METADATA_KEY_PREFIX, NODE_KEY_PREFIX, ORPHAN_KEY_PREFIX,
+                    ROOT_KEY_PREFIX, decode_fast_node, diff_iterators,
+                    encode_stdint, fast_node_key, get_node, get_root_hash,
+                    get_root_node, iavl_latest_version,
+                    is_legacy,
+                    iter_fast_nodes, iter_iavl_tree, legacy_root_key,
+                    load_commit_infos, node_key_suffix, parse_node_key,
+                    root_key, store_prefix)
 
 
 @click.group
@@ -42,7 +46,7 @@ def root_hash(db, store: List[str], version: Optional[int]):
     for s in store:
         if version is None:
             version = iavl_latest_version(db, s)
-        bz = db.get(store_prefix(s) + root_key(version))
+        bz = get_root_hash(db, s, version)
         print(f"{s}: {binascii.hexlify(bz or b'').decode()}")
 
 
@@ -85,24 +89,27 @@ def root_versions(db, store: str, reverse: bool = False):
     """
     iterate all root versions
     """
-    begin = store_prefix(store) + b"r"
-    end = store_prefix(store) + b"s"  # exclusive
-
+    prefix = store_prefix(store)
     db = dbm.open(str(db), read_only=True)
     it = db.iterkeys()
-    if not reverse:
-        it.seek(begin)
-        for k in it:
-            if k >= end:
+    res = []
+    legacy = is_legacy(db, store)
+    begin = prefix + ROOT_KEY_PREFIX if legacy else prefix + NODE_KEY_PREFIX
+    it.seek(begin)
+    for k in it:
+        if legacy:
+            if k[: len(prefix)] != prefix:
                 break
-            print(int.from_bytes(k[len(begin) :], "big"))
-    else:
-        it = reversed(it)
-        it.seek_for_prev(end)
-        for k in it:
-            if k < begin:
+            res.append(int.from_bytes(k[len(begin) :], "big"))
+        else:
+            if k[: len(prefix)] != prefix:
                 break
-            print(int.from_bytes(k[len(begin) :], "big"))
+            k = k[len(prefix) :]
+            version, nonce = parse_node_key(k)
+            res.append(f"{version}-{nonce}")
+    if reverse:
+        res = reversed(res)
+    print(*res, sep="\n")
 
 
 @cli.command()
@@ -155,7 +162,7 @@ def metadata(db, store):
         raise click.UsageError("no store names are provided")
     db = dbm.open(str(db), read_only=True)
     for s in store:
-        bz = db.get(store_prefix(s) + b"m" + b"storage_version")
+        bz = db.get(store_prefix(s) + METADATA_KEY_PREFIX + b"storage_version")
         print(f"{s} storage version: {bz.decode()}")
         print(f"{s} latest version: {iavl_latest_version(db, s)}")
 
@@ -211,7 +218,7 @@ def range_iavl(db, store, version, start, end, output_value):
     # find root node first
     if version is None:
         version = iavl_latest_version(db, store)
-    root_hash = db.get(store_prefix(store) + root_key(version))
+    root_hash = get_root_hash(db, store, version)
     for k, v in iter_iavl_tree(db, store, root_hash, start, end):
         if output_value:
             print(f"{HexBytes(k).hex()} {HexBytes(v).hex()}")
@@ -268,8 +275,11 @@ def diff_fastnode(db, store, start, end, output_value):
     it1 = iter_fast_nodes(db, store, start, end)
 
     # find root node first
+    legacy = is_legacy(db, store)
     version = iavl_latest_version(db, store)
-    root_hash = db.get(store_prefix(store) + root_key(version))
+    prefix = store_prefix(store) if store is not None else b""
+    suffix = legacy_root_key(version) if legacy else root_key(version)
+    root_hash = db.get(prefix + suffix)
     it2 = iter_iavl_tree(db, store, root_hash, start, end)
 
     for status, k, v in diff_iterators(it1, it2):
@@ -323,7 +333,7 @@ def fast_rollback(
             ver = iavl_latest_version(db, info.name)
 
             print("delete orphan entries created since target version")
-            orphan_prefix = prefix + b"o" + target.to_bytes(8, "big")
+            orphan_prefix = prefix + ORPHAN_KEY_PREFIX + target.to_bytes(8, "big")
             it = db.iterkeys()
             it.seek(orphan_prefix)
             for k in it:
@@ -365,12 +375,11 @@ def visualize(db, version, store=None, include_prev_version=False):
     if version is None:
         version = iavl_latest_version(db, store)
 
-    prefix = store_prefix(store) if store is not None else b""
-    root_hash = db.get(prefix + root_key(version))
+    root_hash = get_root_hash(db, store, version)
     root_hash2 = None
     if include_prev_version and version > 1:
-        root_hash2 = db.get(prefix + root_key(version - 1))
-    g = visualize_iavl(db, prefix, root_hash, version, root_hash2=root_hash2)
+        root_hash2 = get_root_hash(db, store, version - 1)
+    g = visualize_iavl(db, root_hash, version, root_hash2=root_hash2, store=store)
     print(g.source)
 
 
@@ -396,7 +405,13 @@ def visualize(db, version, store=None, include_prev_version=False):
     type=click.Path(exists=True),
     required=True,
 )
-def dump_changesets(db, start_version, end_version, store: Optional[str], out_dir: str):
+def dump_changesets(
+    db,
+    start_version,
+    end_version,
+    store: Optional[str],
+    out_dir: str,
+):
     """
     extract changeset by comparing iavl versions and save in files
     with compatible format with file streamer.
@@ -408,10 +423,16 @@ def dump_changesets(db, start_version, end_version, store: Optional[str], out_di
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for _, v, _, changeset in diff.iter_state_changes(
-        db, ndb, start_version=start_version, end_version=end_version, prefix=prefix
+    legacy = is_legacy(db, store)
+    for _, v, n, _, changeset in diff.iter_state_changes(
+        db,
+        ndb,
+        start_version=start_version,
+        end_version=end_version,
+        prefix=prefix,
+        legacy=legacy,
     ):
-        with (Path(out_dir) / f"block-{v}-data").open("wb") as fp:
+        with (Path(out_dir) / f"block-{v}-{n}-data").open("wb") as fp:
             diff.write_change_set(fp, changeset)
 
 
@@ -448,13 +469,20 @@ def test_state_round_trip(db, store, start_version):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    for pversion, v, root, changeset in diff.iter_state_changes(
-        db, ndb, start_version=start_version, prefix=prefix
+    legacy = is_legacy(db, store)
+    for pversion, v, n, root, changeset in diff.iter_state_changes(
+        db,
+        ndb,
+        start_version=start_version,
+        prefix=prefix,
+        legacy=legacy,
     ):
         # re-apply changeset
         tree = Tree(ndb, pversion)
         diff.apply_change_set(tree, changeset)
         tmp = tree.save_version(dry_run=True)
+        if not legacy:
+            tmp = node_key_suffix(v, n)
         if (root or hashlib.sha256().digest()) == tmp:
             print(v, len(changeset), "ok")
         else:
@@ -487,8 +515,9 @@ def visualize_pruning(db, store, version):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
-    predecessor = ndb.prev_version(version) or 0
-    successor = ndb.next_version(version)
+    legacy = is_legacy(db, store)
+    predecessor = ndb.prev_version(version, legacy) or 0
+    successor = ndb.next_version(version, legacy)
     root1 = ndb.get_root_hash(version)
     root2 = ndb.get_root_hash(successor)
 
@@ -549,15 +578,15 @@ def scan_wal(wal: str):
         for cs in entry.changeset:
             print(f"store: {cs.name}")
             for pair in cs.changeset.pairs:
-                print(
-                    f"  key: {binascii.hexlify(pair.key).decode()} value: {binascii.hexlify(pair.value).decode()}"
-                )
+                key = binascii.hexlify(pair.key).decode()
+                value = binascii.hexlify(pair.value).decode()
+                print(f"  key: {key} value: {value}")
         for upgrade in entry.upgrades:
             print(f"upgrade: {upgrade.name}", end="")
             if upgrade.rename_from:
                 print(f", from {upgrade.rename_from}", end="")
             if upgrade.delete:
-                print(f"deleted", end="")
+                print("deleted", end="")
             print("")
 
 

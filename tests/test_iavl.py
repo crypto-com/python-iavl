@@ -2,6 +2,7 @@ from typing import NamedTuple
 
 import rocksdb
 from hexbytes import HexBytes
+
 from iavl.diff import Op, apply_change_set
 from iavl.iavl import NodeDB, Tree
 
@@ -58,18 +59,18 @@ def setup_test_tree(kvdb: rocksdb.DB):
     db = NodeDB(kvdb)
     tree = Tree(db, 0)
     apply_change_set(tree, ChangeSets[0])
-    tree.save_version()
+    tree.save_version(legacy=True)
 
     tree = Tree(db, 1)
     assert b"world" == tree.get(b"hello")
     apply_change_set(tree, ChangeSets[1])
-    tree.save_version()
+    tree.save_version(legacy=True)
 
     tree = Tree(db, 2)
     assert b"world1" == tree.get(b"hello")
     assert b"world1" == tree.get(b"hello1")
     apply_change_set(tree, ChangeSets[2])
-    tree.save_version()
+    tree.save_version(legacy=True)
 
     tree = Tree(db, 3)
     assert b"world1" == tree.get(b"hello3")
@@ -78,17 +79,17 @@ def setup_test_tree(kvdb: rocksdb.DB):
     assert 2 == node.height
 
     apply_change_set(tree, ChangeSets[3])
-    tree.save_version()
+    tree.save_version(legacy=True)
 
     # remove nothing
     assert tree.remove(b"not exists") is None
 
     apply_change_set(tree, ChangeSets[4])
-    tree.save_version()
+    tree.save_version(legacy=True)
     assert not tree.get(b"hello")
 
     apply_change_set(tree, ChangeSets[5])
-    tree.save_version()
+    tree.save_version(legacy=True)
 
     # test cache miss
     db = NodeDB(kvdb)
@@ -98,7 +99,7 @@ def setup_test_tree(kvdb: rocksdb.DB):
 
     # remove most of the values
     apply_change_set(tree, ChangeSets[6])
-    tree.save_version()
+    tree.save_version(legacy=True)
 
 
 def test_basic_ops(tmp_path):
@@ -134,7 +135,7 @@ def test_empty_tree(tmp_path):
     tree = Tree(db, 0)
     assert tree.get("hello") is None
     assert tree.remove("hello") is None
-    tree.save_version()
+    tree.save_version(legacy=True)
     assert tree.version == 1
 
 
@@ -147,7 +148,7 @@ def test_new_key(tmp_path):
     tree = Tree(db, 0)
     for i in range(4):
         tree.set(f"key-{i}".encode(), b"1")
-    tree.save_version()
+    tree.save_version(legacy=True)
 
     # the smallest key in the right half of the tree
     assert tree.root_node().key == b"key-2"

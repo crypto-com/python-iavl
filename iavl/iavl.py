@@ -9,8 +9,10 @@ from typing import Callable, Dict, Optional, Union
 import cprotobuf
 import rocksdb
 
-from .utils import (GetNode, PersistedNode, encode_bytes, node_key, root_key,
-                    visit_iavl_nodes)
+from .utils import (NODE_KEY_PREFIX, ROOT_KEY_PREFIX, GetNode, PersistedNode,
+                    decode_node, encode_bytes, legacy_node_key,
+                    legacy_root_key, node_key, parse_node_key, root_key,
+                    root_key_suffix, visit_iavl_nodes)
 
 NodeRef = Union[bytes, "Node"]
 
@@ -35,12 +37,14 @@ class NodeDB:
         try:
             return self.cache[hash]
         except KeyError:
-            bz = self.db.get(self.prefix + node_key(hash))
-            if bz is None:
-                return
-            node = PersistedNode.decode(bz, hash)
-            self.cache[hash] = node
-            return node
+            for key_func in (node_key, legacy_node_key):
+                key = key_func(hash)
+                bz = self.db.get(self.prefix + key)
+                if bz:
+                    legacy = key_func is legacy_node_key
+                    node, _ = decode_node(bz, hash, legacy)
+                    return node
+            return None
 
     def resolve_node(self, ref: NodeRef) -> Union["Node", PersistedNode, None]:
         if isinstance(ref, Node):
@@ -48,28 +52,32 @@ class NodeDB:
         elif ref is not None:
             return self.get(ref)
 
-    def batch_remove_node(self, hash: bytes):
+    def batch_remove_node(self, hash: bytes, legacy: bool = False):
         "remove node"
         if self.batch is None:
             self.batch = rocksdb.WriteBatch()
-        self.batch.delete(node_key(hash))
+        key = legacy_node_key(hash) if legacy else node_key(hash)
+        self.batch.delete(key)
         self.cache.pop(hash, None)
 
-    def batch_remove_root_hash(self, version: int):
+    def batch_remove_root_hash(self, version: int, legacy: bool = False):
         if self.batch is None:
             self.batch = rocksdb.WriteBatch()
-        self.batch.delete(root_key(version))
+        key = legacy_root_key(version) if legacy else root_key(version)
+        self.batch.delete(key)
 
-    def batch_set_node(self, hash: bytes, node: PersistedNode):
+    def batch_set_node(self, hash: bytes, node: PersistedNode, legacy: bool = False):
         if self.batch is None:
             self.batch = rocksdb.WriteBatch()
         self.cache[hash] = node
-        self.batch.put(node_key(hash), node.encode())
+        key = legacy_node_key(hash) if legacy else node_key(hash)
+        self.batch.put(key, node.encode())
 
-    def batch_set_root_hash(self, version: int, hash: bytes):
+    def batch_set_root_hash(self, version: int, hash: bytes, legacy: bool = False):
         if self.batch is None:
             self.batch = rocksdb.WriteBatch()
-        self.batch.put(root_key(version), hash)
+        key = legacy_root_key(version) if legacy else root_key(version)
+        self.batch.put(key, hash)
 
     def batch_commit(self):
         if self.batch is not None:
@@ -77,7 +85,12 @@ class NodeDB:
             self.batch = None
 
     def get_root_hash(self, version: int) -> Optional[bytes]:
-        return self.db.get(self.prefix + root_key(version))
+        bz = self.db.get(self.prefix + root_key(version))
+        if not bz:
+            return self.db.get(self.prefix + legacy_root_key(version))
+        key = root_key(version)
+        _, nonce = parse_node_key(key)
+        return root_key_suffix(nonce)
 
     def get_root_node(self, version: int) -> Optional[PersistedNode]:
         h = self.get_root_hash(version)
@@ -90,12 +103,13 @@ class NodeDB:
 
         return iavl_latest_version(self.db, None)
 
-    def next_version(self, v: int) -> Optional[int]:
+    def next_version(self, v: int, legacy=False) -> Optional[int]:
         """
         return the first version larger than v
         """
         it = self.db.iterkeys()
-        target = self.prefix + root_key(v)
+        suffix = legacy_root_key(v) if legacy else root_key(v)
+        target = self.prefix + suffix
         it.seek(target)
         k = next(it, None)
         if k is None:
@@ -104,31 +118,43 @@ class NodeDB:
             k = next(it, None)
             if k is None:
                 return
-        if not k.startswith(self.prefix + b"r"):
+        suffix = ROOT_KEY_PREFIX if legacy else NODE_KEY_PREFIX
+        if not k.startswith(self.prefix + suffix):
             return
+        if legacy:
+            return int.from_bytes(k[len(self.prefix) + 1 :], "big")
+        else:
+            k = k[len(self.prefix) :]
+            version, _ = parse_node_key(k)
+            return version
 
-        return int.from_bytes(k[len(self.prefix) + 1 :], "big")
-
-    def prev_version(self, v: int) -> Optional[int]:
+    def prev_version(self, v: int, legacy=False) -> Optional[int]:
         """
         return the closest version that's smaller than the target
         """
         it = reversed(self.db.iterkeys())
-        target = self.prefix + root_key(v)
+        suffix = legacy_root_key(v) if legacy else root_key(v)
+        target = self.prefix + suffix
         it.seek_for_prev(target)
-        key = next(it, None)
-        if key == target:
-            key = next(it, None)
-        if key is None or not key.startswith(self.prefix + b"r"):
+        k = next(it, None)
+        if k == target:
+            k = next(it, None)
+        suffix = ROOT_KEY_PREFIX if legacy else NODE_KEY_PREFIX
+        if k is None or not k.startswith(self.prefix + suffix):
             return
-        return int.from_bytes(key[len(self.prefix) + 1 :], "big")
+        if legacy:
+            return int.from_bytes(k[len(self.prefix) + 1 :], "big")
+        else:
+            k = k[len(self.prefix) :]
+            version, _ = parse_node_key(k)
+            return version
 
-    def delete_version(self, v: int) -> int:
+    def delete_version(self, v: int, legacy=False) -> int:
         """
         return how many nodes deleted
         """
-        predecessor = self.prev_version(v) or 0
-        successor = self.next_version(v)
+        predecessor = self.prev_version(v, legacy) or 0
+        successor = self.next_version(v, legacy)
         assert successor is not None, "can't delete latest version"
 
         counter = 0
@@ -140,9 +166,9 @@ class NodeDB:
             self.get_root_hash(successor),
         ):
             counter += 1
-            self.batch_remove_node(n.hash)
+            self.batch_remove_node(n.hash, legacy)
 
-        self.batch_remove_root_hash(v)
+        self.batch_remove_root_hash(v, legacy)
         self.batch_commit()
         return counter
 
@@ -361,21 +387,21 @@ class Tree:
         self.root_node_ref = new
         return value
 
-    def save_version(self, dry_run=False):
+    def save_version(self, dry_run=False, legacy: bool = False):
         """
         if dry_run=True, don't actually modify anything, just return the new root hash
         """
 
         def save_node(hash: bytes, node: Node):
             if not dry_run:
-                self.ndb.batch_set_node(hash, node.persisted(hash))
+                self.ndb.batch_set_node(hash, node.persisted(hash), legacy)
 
         if isinstance(self.root_node_ref, Node):
             self.root_node_ref = self.root_node_ref.save(save_node)
         root_hash = self.root_node_ref or hashlib.sha256().digest()
         if not dry_run:
             self.version += 1
-            self.ndb.batch_set_root_hash(self.version, root_hash)
+            self.ndb.batch_set_root_hash(self.version, root_hash, legacy)
             self.ndb.batch_commit()
         return root_hash
 
