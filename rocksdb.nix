@@ -11,8 +11,9 @@
   zlib,
   zstd,
   windows,
-  # don't enable jemalloc, error on linux: https://github.com/NixOS/nixpkgs/issues/315628
-  enableJemalloc ? false,
+  # only enable jemalloc for non-windows platforms
+  # see: https://github.com/NixOS/nixpkgs/issues/216479
+  enableJemalloc ? !stdenv.hostPlatform.isWindows && !stdenv.hostPlatform.isStatic,
   jemalloc,
   enableShared ? !stdenv.hostPlatform.isStatic,
   sse42Support ? stdenv.hostPlatform.sse4_2Support,
@@ -20,13 +21,13 @@
 
 stdenv.mkDerivation (finalAttrs: {
   pname = "rocksdb";
-  version = "9.7.4";
+  version = "9.8.4";
 
   src = fetchFromGitHub {
     owner = "facebook";
     repo = finalAttrs.pname;
     rev = "v${finalAttrs.version}";
-    hash = "sha256-u5uuShM2SxHc9/zL4UU56IhCcR/ZQbzde0LgOYS44bM=";
+    hash = "sha256-A6Gx4FqoGlxITUUz9k6tkDjUcLtMUBK9JS8vuAS96H0=";
   };
 
   nativeBuildInputs = [
