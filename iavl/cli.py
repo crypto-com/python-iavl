@@ -9,10 +9,11 @@ import click
 from hexbytes import HexBytes
 
 from . import dbm
-from .utils import (METADATA_KEY_PREFIX, ORPHAN_KEY_PREFIX, ROOT_KEY_PREFIX,
-                    decode_fast_node, diff_iterators, encode_stdint,
-                    fast_node_key, get_node, get_root_hash, get_root_node,
-                    iavl_latest_version, iavl_latest_version_with_legacy,
+from .utils import (METADATA_KEY_PREFIX, NODE_KEY_PREFIX, ORPHAN_KEY_PREFIX,
+                    ROOT_KEY_PREFIX, decode_fast_node, diff_iterators,
+                    encode_stdint, fast_node_key, get_node, get_root_hash,
+                    get_root_node, iavl_latest_version,
+                    is_legacy,
                     iter_fast_nodes, iter_iavl_tree, legacy_root_key,
                     load_commit_infos, node_key_suffix, parse_node_key,
                     root_key, store_prefix)
@@ -89,15 +90,14 @@ def root_versions(db, store: str, reverse: bool = False):
     iterate all root versions
     """
     prefix = store_prefix(store)
-    begin = prefix + ROOT_KEY_PREFIX
-
     db = dbm.open(str(db), read_only=True)
     it = db.iterkeys()
     res = []
+    legacy = is_legacy(db, store)
+    begin = prefix + ROOT_KEY_PREFIX if legacy else prefix + NODE_KEY_PREFIX
     it.seek(begin)
     for k in it:
-        # legacy
-        if k.startswith(prefix + ROOT_KEY_PREFIX):
+        if legacy:
             if k[: len(prefix)] != prefix:
                 break
             res.append(int.from_bytes(k[len(begin) :], "big"))
@@ -275,7 +275,8 @@ def diff_fastnode(db, store, start, end, output_value):
     it1 = iter_fast_nodes(db, store, start, end)
 
     # find root node first
-    version, legacy = iavl_latest_version_with_legacy(db, store)
+    legacy = is_legacy(db, store)
+    version = iavl_latest_version(db, store)
     prefix = store_prefix(store) if store is not None else b""
     suffix = legacy_root_key(version) if legacy else root_key(version)
     root_hash = db.get(prefix + suffix)
@@ -404,14 +405,12 @@ def visualize(db, version, store=None, include_prev_version=False):
     type=click.Path(exists=True),
     required=True,
 )
-@click.option("--legacy", is_flag=True, default=False)
 def dump_changesets(
     db,
     start_version,
     end_version,
     store: Optional[str],
     out_dir: str,
-    legacy: bool = False,
 ):
     """
     extract changeset by comparing iavl versions and save in files
@@ -424,6 +423,7 @@ def dump_changesets(
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
+    legacy = is_legacy(db, store)
     for _, v, n, _, changeset in diff.iter_state_changes(
         db,
         ndb,
@@ -458,8 +458,7 @@ def print_changeset(file):
     help="the version to start check",
     default=1,
 )
-@click.option("--legacy", is_flag=True, default=False)
-def test_state_round_trip(db, store, start_version, legacy: bool = False):
+def test_state_round_trip(db, store, start_version):
     """
     extract state changes from iavl versions,
     reapply and check if we can get back the same root hash
@@ -470,6 +469,7 @@ def test_state_round_trip(db, store, start_version, legacy: bool = False):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
+    legacy = is_legacy(db, store)
     for pversion, v, n, root, changeset in diff.iter_state_changes(
         db,
         ndb,
@@ -505,8 +505,7 @@ def test_state_round_trip(db, store, start_version, legacy: bool = False):
     help="the version to prune",
     default=1,
 )
-@click.option("--legacy", is_flag=True, default=False)
-def visualize_pruning(db, store, version, legacy: bool = False):
+def visualize_pruning(db, store, version):
     """
     used to analyzsis performance of pruning algorithm on production data.
     """
@@ -516,6 +515,7 @@ def visualize_pruning(db, store, version, legacy: bool = False):
     db = dbm.open(str(db), read_only=True)
     prefix = store_prefix(store) if store is not None else b""
     ndb = NodeDB(db, prefix=prefix)
+    legacy = is_legacy(db, store)
     predecessor = ndb.prev_version(version, legacy) or 0
     successor = ndb.next_version(version, legacy)
     root1 = ndb.get_root_hash(version)

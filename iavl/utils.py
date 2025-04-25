@@ -177,7 +177,7 @@ def store_prefix(s: str) -> bytes:
     return b"s/k:%s/" % s.encode()
 
 
-def prev_version_with_legacy(db: DBM, store: str, v: int) -> tuple[Optional[int], bool]:
+def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
     it = reversed(db.iterkeys())
     prefix = store_prefix(store) if store is not None else b""
     target = prefix + root_key(v)
@@ -188,29 +188,20 @@ def prev_version_with_legacy(db: DBM, store: str, v: int) -> tuple[Optional[int]
         k = next(it, None)
     if k is None:
         # empty db
-        return None, False
+        return None
 
     if k >= target:
         k = next(it, None)
         if k is None:
-            return None, False
+            return None
 
     if k.startswith(prefix + ROOT_KEY_PREFIX):
         # parse version from legacy key
-        return int.from_bytes(k[len(prefix) + 1 :], "big"), True
+        return int.from_bytes(k[len(prefix) + 1 :], "big")
     elif k.startswith(prefix + NODE_KEY_PREFIX):
         k = k[len(prefix) :]
         version, _ = parse_node_key(k)
-        return version, False
-
-
-def prev_version(db: DBM, store: str, v: int) -> Optional[int]:
-    res, _ = prev_version_with_legacy(db, store, v)
-    return res
-
-
-def iavl_latest_version_with_legacy(db: DBM, store: str) -> tuple[Optional[int], bool]:
-    return prev_version_with_legacy(db, store, 1 << 63 - 1)
+        return version
 
 
 def iavl_latest_version(db: DBM, store: str) -> Optional[int]:
@@ -339,6 +330,15 @@ def get_root_node(
 ) -> Optional[PersistedNode]:
     hash = get_root_hash(db, store, version)
     return get_node(db, hash, store)
+
+
+def is_legacy(db: DBM, store: str) -> bool:
+    prefix = store_prefix(store) if store else b""
+    version = 1
+    for key_func in (root_key, legacy_root_key):
+        if db.get(prefix + key_func(version)) is not None:
+            return key_func is legacy_root_key
+    return False
 
 
 def get_root_hash(db: DBM, store: str, version: int) -> Optional[bytes]:
